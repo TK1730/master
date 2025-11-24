@@ -76,7 +76,7 @@ for person in os.listdir(dataset_path):
             wav, sr = librosa.load(file_path)
             f0, sp, ap = pw.wav2world(wav.astype(np.float64), sr)
 
-            rsp = (sp)
+            rsp = (sp*b)
             rf0 = np.zeros_like(f0)
             rap = np.ones_like(ap)
             rx = pw.synthesize(rf0, rsp, rap, sr)
@@ -89,8 +89,7 @@ for person in os.listdir(dataset_path):
         # ######## ラベルファイルとモノラベルのコピー処理 ##########
         voiced_dir_path = dataset_path + person + voiced_dir  # 有声発話のディレクトリパス
         output_dir_path = ouput_path + person + output_dir  # 保存先のディレクトリパス
-        print(f"voiced_dir_path : {voiced_dir_path}")
-        print(f"output_dir_path : {output_dir_path}")
+
         # ファイルをコピー
         shutil.copy2(
             voiced_dir_path + "/transcripts_utf8.txt",
