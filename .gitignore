@@ -1,2 +1,4 @@
-# Ignore directory
-/dataset/
+# Ignore only subdirectories under `dataset/` (keep files in `dataset/` root)
+# Ignore immediate child directories and all their contents
+dataset/*/
+dataset/*/**
