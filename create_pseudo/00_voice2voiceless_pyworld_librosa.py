@@ -51,106 +51,105 @@ def pseudo_whisper_voice_processing(
         print(speaker_id_jvs+'>>>>>>>>>>>>>>>')
         # ######### 無声化処理 ##########
         # voiced
-        # for idx, load_wav_file in enumerate(voiced_wav_path.iterdir()):
-        #     loaded_wav_file, sr = librosa.load(load_wav_file)
-        #     if loaded_wav_file.shape[0] < min_wav_length:
-        #         continue
-        #     f0, cp, ap = pw.wav2world(loaded_wav_file.astype(np.float64), sr)
-        #     if idx == 0:
-        #         cp_all = cp.T
-        #     else:
-        #         cp_all = np.hstack((cp_all, cp.T))
+        for idx, load_wav_file in enumerate(voiced_wav_path.iterdir()):
+            loaded_wav_file, sr = librosa.load(load_wav_file)
+            if loaded_wav_file.shape[0] < min_wav_length:
+                continue
+            f0, cp, ap = pw.wav2world(loaded_wav_file.astype(np.float64), sr)
+            if idx == 0:
+                cp_all = cp.T
+            else:
+                cp_all = np.hstack((cp_all, cp.T))
 
-        # x = cp_all.max(axis=1)
-        # xmax = x.max()
-        # x /= xmax
+        x = cp_all.max(axis=1)
+        xmax = x.max()
+        x /= xmax
 
-        # # voiceless
-        # for idx, load_wav_file in enumerate(voiceless_wav_path.iterdir()):
-        #     loaded_wav_file, sr = librosa.load(load_wav_file)
-        #     f0, cp, ap = pw.wav2world(loaded_wav_file.astype(np.float64), sr)
-        #     D = librosa.stft(
-        #         y=loaded_wav_file,
-        #         n_fft=1024
-        #     )  # hop_length = round(sr*0.005))
-        #     sp, phase = librosa.magphase(D)
+        # voiceless
+        for idx, load_wav_file in enumerate(voiceless_wav_path.iterdir()):
+            loaded_wav_file, sr = librosa.load(load_wav_file)
+            f0, cp, ap = pw.wav2world(loaded_wav_file.astype(np.float64), sr)
+            D = librosa.stft(
+                y=loaded_wav_file,
+                n_fft=1024
+            )  # hop_length = round(sr*0.005))
+            sp, phase = librosa.magphase(D)
 
-        #     if idx == 0:
-        #         cp_all = cp.T
-        #         sp_all = sp
-        #     else:
-        #         cp_all = np.hstack((cp_all, cp.T))
-        #         sp_all = np.hstack((sp_all, sp))
+            if idx == 0:
+                cp_all = cp.T
+                sp_all = sp
+            else:
+                cp_all = np.hstack((cp_all, cp.T))
+                sp_all = np.hstack((sp_all, sp))
 
-        # y = cp_all.max(axis=1)
-        # ymax = y.max()
-        # y /= ymax
-        # b = np.zeros_like(x)
-        # b = y/x
+        y = cp_all.max(axis=1)
+        ymax = y.max()
+        y /= ymax
+        b = np.zeros_like(x)
+        b = y/x
 
-        # # apply b
-        # for idx, load_wav_file in enumerate(voiced_wav_path.iterdir()):
-        #     loaded_wav_file, sr = librosa.load(load_wav_file)
-        #     f0, sp, ap = pw.wav2world(loaded_wav_file.astype(np.float64), sr)
+        # apply b
+        for idx, load_wav_file in enumerate(voiced_wav_path.iterdir()):
+            loaded_wav_file, sr = librosa.load(load_wav_file)
+            f0, sp, ap = pw.wav2world(loaded_wav_file.astype(np.float64), sr)
 
-        #     rsp = sp*b*ymax
-        #     rsp.clip(0, None)
+            rsp = sp*b*ymax
+            rsp.clip(0, None)
 
-        #     rf0 = f0
-        #     rap = np.ones_like(ap)  # .copy().clip(0.5,None)
-        #     # synthesize an utterance using the parameters
-        #     rx = pw.synthesize(rf0, rsp, rap, sr)
-        #     D = librosa.stft(y=rx, n_fft=1024)
-        #     sp, phase = librosa.magphase(D)
+            rf0 = np.zeros_like(f0)
+            rap = np.ones_like(ap)  # .copy().clip(0.5,None)
+            # synthesize an utterance using the parameters
+            rx = pw.synthesize(rf0, rsp, rap, sr)
+            D = librosa.stft(y=rx, n_fft=1024)
+            sp, phase = librosa.magphase(D)
 
-        #     if idx == 0:
-        #         rsp_all = sp
-        #     else:
-        #         rsp_all = np.hstack((rsp_all, sp))
+            if idx == 0:
+                rsp_all = sp
+            else:
+                rsp_all = np.hstack((rsp_all, sp))
 
-        # rb = np.mean(sp_all, axis=1) / np.mean(rsp_all, axis=1)
+        rb = np.mean(sp_all, axis=1) / np.mean(rsp_all, axis=1)
 
-        # plt.clf()
-        # fig = plt.figure()
-        # plt.plot(sp_all.max(axis=1), label='whisper')
-        # plt.plot(rsp_all.max(axis=1), label='pseudo')
-        # plt.plot(rb, label='R')
-        # plt.xlabel('Frequency bin (Hz)')
-        # plt.ylabel('Magnitude')
-        # plt.legend()
-        # plt.grid()
-        # # plt.close()
-        # fig.canvas.draw()
-        # im = np.array(fig.canvas.renderer.buffer_rgba())
-        # dst = cv2.cvtColor(im, cv2.COLOR_RGBA2BGR)
+        plt.clf()
+        fig = plt.figure()
+        plt.plot(sp_all.max(axis=1), label='whisper')
+        plt.plot(rsp_all.max(axis=1), label='pseudo')
+        plt.plot(rb, label='R')
+        plt.xlabel('Frequency bin (Hz)')
+        plt.ylabel('Magnitude')
+        plt.legend()
+        plt.grid()
+        # plt.close()
+        fig.canvas.draw()
+        im = np.array(fig.canvas.renderer.buffer_rgba())
+        dst = cv2.cvtColor(im, cv2.COLOR_RGBA2BGR)
 
-        # cv2.imshow('b', dst)
-        # cv2.waitKey(1)
+        cv2.imshow('b', dst)
+        cv2.waitKey(1)
 
-        # for idx, load_wav_file in enumerate(voiced_wav_path.iterdir()):
-        #     output_wav_path = Path.joinpath(output_path, load_wav_file.name)
-        #     print(f"Processing {output_wav_path}")
+        for idx, load_wav_file in enumerate(voiced_wav_path.iterdir()):
+            output_wav_path = Path.joinpath(output_path, load_wav_file.name)
 
-        #     wav, sr = librosa.load(load_wav_file)
-        #     f0, sp, ap = pw.wav2world(wav.astype(np.float64), sr)
+            wav, sr = librosa.load(load_wav_file)
+            f0, sp, ap = pw.wav2world(wav.astype(np.float64), sr)
 
-        #     rsp = sp*b*ymax
-        #     rsp.clip(0, None)
+            rsp = sp*b*ymax
+            rsp.clip(0, None)
 
-        #     rf0 = f0
-        #     rap = np.ones_like(ap)  # .copy().clip(0.5,None)
-        #     # synthesize an utterance using the parameters
-        #     rx = pw.synthesize(rf0, rsp, rap, sr)
+            rf0 = np.zeros_like(f0)
+            rap = np.ones_like(ap)  # .copy().clip(0.5,None)
+            # synthesize an utterance using the parameters
+            rx = pw.synthesize(rf0, rsp, rap, sr)
 
-        #     D = librosa.stft(y=rx, n_fft=1024)
-        #     sp, phase = librosa.magphase(D)
+            D = librosa.stft(y=rx, n_fft=1024)
+            sp, phase = librosa.magphase(D)
 
-        #     rsp = (sp.T*rb).T
+            rsp = (sp.T*rb).T
 
-        #     rD = rsp * np.exp(1j*phase)  # 直交形式への変換はlibrosaの関数ないみたいなので、自分で計算する。
-        #     rwav = librosa.istft(rD)
+            rD = rsp * np.exp(1j*phase)  # 直交形式への変換はlibrosaの関数ないみたいなので、自分で計算する。
+            rwav = librosa.istft(rD)
 
-        #     sf.write(output_wav_path, rwav, sr, subtype="PCM_16")
+            sf.write(output_wav_path, rwav, sr, subtype="PCM_16")
 
             # # spectrogram 描画
             # # 無声発話
