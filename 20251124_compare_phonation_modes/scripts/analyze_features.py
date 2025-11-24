@@ -61,7 +61,11 @@ def calculate_mcd_with_dtw(ref_wav, gen_wav, sr, n_mcep=24):
 
     # 3. DTWによるアライメント計算
     # librosa.sequence.dtw は (Feature, Time) の形を期待するため転置します
-    d, path = librosa.sequence.dtw(ref_mcep_nopower.T, gen_mcep_nopower.T, metric='euclidean')
+    d, path = librosa.sequence.dtw(
+        ref_mcep_nopower.T,
+        gen_mcep_nopower.T,
+        metric='euclidean'
+    )
 
     # 4. 距離の計算
     # path は (ref_index, gen_index) のタプルのリスト
@@ -148,11 +152,32 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Calculate MCD and Mel-MSE with DTW")
-    parser.add_argument("--ref_dir", type=str, required=True, help="Reference directory (Real Whisper)")
-    parser.add_argument("--gen_dir", type=str, required=True, help="Generated directory (Pseudo Whisper)")
-    parser.add_argument("--output_csv", type=str, default="results/metrics.csv", help="Output CSV path")
-    parser.add_argument("--sr", type=int, default=24000, help="Sampling rate")
+    parser = argparse.ArgumentParser(
+        description="Calculate MCD and Mel-MSE with DTW")
+    parser.add_argument(
+        "--ref_dir",
+        type=str,
+        required=True,
+        help="Reference directory (Real Whisper)"
+    )
+    parser.add_argument(
+        "--gen_dir",
+        type=str,
+        required=True,
+        help="Generated directory (Pseudo Whisper)"
+    )
+    parser.add_argument(
+        "--output_csv",
+        type=str,
+        default="results/metrics.csv",
+        help="Output CSV path"
+    )
+    parser.add_argument(
+        "--sr",
+        type=int,
+        default=24000,
+        help="Sampling rate"
+    )
 
     args = parser.parse_args()
 

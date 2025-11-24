@@ -2,3 +2,6 @@
 # Ignore immediate child directories and all their contents
 dataset/*/
 dataset/*/**
+
+# file
+*.csv
