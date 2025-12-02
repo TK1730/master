@@ -113,16 +113,7 @@ def pseudo_whisper_voice_processing(
 
         rb = np.mean(sp_all, axis=1) / np.mean(rsp_all, axis=1)
 
-        plt.clf()
         fig = plt.figure()
-        plt.plot(sp_all.max(axis=1), label='whisper')
-        plt.plot(rsp_all.max(axis=1), label='pseudo')
-        plt.plot(rb, label='R')
-        plt.xlabel('Frequency bin (Hz)')
-        plt.ylabel('Magnitude')
-        plt.legend()
-        plt.grid()
-        # plt.close()
         fig.canvas.draw()
         im = np.array(fig.canvas.renderer.buffer_rgba())
         dst = cv2.cvtColor(im, cv2.COLOR_RGBA2BGR)
