@@ -2,7 +2,7 @@
 音素認識モデルの訓練スクリプト
 """
 from types import SimpleNamespace
-from typing import Union
+from typing import Tuple
 import cv2
 import numpy as np
 from pathlib import Path
@@ -15,12 +15,14 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.amp import autocast, GradScaler
+from torch.utils.data import DataLoader
 
 # Add parent directory to path to allow importing modules
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from model.lstm_net_rev import LSTM_net
+from model.lstm_net_rev import LSTM_net  # noqa: E402
+from scripts.dataset import PhonemeDataset, collate_fn  # noqa: E402
 
 
 class LogManager:
@@ -48,7 +50,7 @@ class LogManager:
         チェックポイントを保存する
         """
         torch.save(checkpoint, f"{folder}/{file_name}")
-        
+
     def save_config(self, config, folder):
         """
         設定を保存する
@@ -57,45 +59,9 @@ class LogManager:
             yaml.dump(config, f)
 
 
-class PhonemeDataset(Dataset):
-    def __init__(self, list_file, root_dir=None):
-        self.root_dir = root_dir
-        with open(list_file, 'r', encoding='utf-8') as f:
-            self.files = [line.strip() for line in f]
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, idx):
-        base_path = self.files[idx]
-        if self.root_dir:
-            file_path = os.path.join(self.root_dir, base_path)
-        else:
-            file_path = base_path
-            
-        msp_path = file_path + "_msp.npy"
-        ppg_path = file_path + "_ppgmat.npy"
-        
-        try:
-            msp = np.load(msp_path).astype(np.float32)
-            ppg = np.load(ppg_path).astype(np.float32)
-            
-            # Transpose to (Channels, Time) if needed
-            # Assuming model expects (Batch, Channels, Time) based on 'in_channels'
-            if msp.shape[1] == 80: # (Time, 80) -> (80, Time)
-                msp = msp.T
-            if ppg.shape[1] == 36: # (Time, 36) -> (36, Time)
-                ppg = ppg.T
-                
-            return msp, ppg
-        except Exception as e:
-            print(f"Error loading {base_path}: {e}")
-            raise e
-
-
 def draw_msp(y, t):
     """
-    MSPを表示する
+    ppgを表示する
     """
     y = y.to(torch.float32).to('cpu').detach().numpy()[0]
     t = t.to(torch.float32).to('cpu').detach().numpy()[0]
@@ -119,22 +85,28 @@ def draw_heatmap(pre, ans):
     ans = ans.to(torch.int32).to('cpu').detach().numpy()
     pre = pre.to(torch.int32).to('cpu').detach().numpy()
     heatmap = np.zeros((36, 36), dtype=np.float32)
-    
+
     ans = ans.flatten()
     pre = pre.flatten()
-    
+
     mask = (ans < 36) & (pre < 36)
     ans = ans[mask]
     pre = pre[mask]
-    
+
     np.add.at(heatmap, (ans, pre), 1)
-    
+
     heatmap = heatmap / (heatmap.sum(axis=1, keepdims=True) + 1e-9)
-    
-    heatmap = cv2.resize(heatmap, dsize=None, fx=10, fy=10, interpolation=cv2.INTER_NEAREST)
+
+    heatmap = cv2.resize(
+        heatmap,
+        dsize=None,
+        fx=10,
+        fy=10,
+        interpolation=cv2.INTER_NEAREST
+    )
     heatmap = (heatmap * 255).astype(np.uint8)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-    
+
     cv2.imshow("h-map", heatmap)
     cv2.waitKey(1)
 
@@ -145,13 +117,13 @@ def create_config(config_path="config.yaml") -> SimpleNamespace:
     """
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
-        
+
     config = SimpleNamespace()
     config.hyper_params = SimpleNamespace(**config_dict['hyperparameters'])
     config.model_params = SimpleNamespace(**config_dict['model_params'])
     config.sampling_rate = config_dict.get('sampling_rate', 22050)
     config.model_name = config_dict.get('model_name', 'LSTM_net')
-    
+
     return config
 
 
@@ -188,31 +160,56 @@ def main():
     """
     project_root = Path(__file__).resolve().parent.parent
     config_path = project_root / "config.yaml"
-    
+
     config = create_config(str(config_path))
-    
+
     set_seed(config.hyper_params.seed)
     device = use_device()
-    
+
     model = create_model(config.model_params.__dict__)
     model.to(device)
-    
+
     dataset_dir = project_root / "dataset"
-    train_dataset = PhonemeDataset(dataset_dir / "train.txt", root_dir=dataset_dir)
-    test_dataset = PhonemeDataset(dataset_dir / "test.txt", root_dir=dataset_dir)
-    
-    train_loader = DataLoader(train_dataset, batch_size=config.hyper_params.batch_size, shuffle=True, pin_memory=True, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=config.hyper_params.batch_size, shuffle=False, pin_memory=True, num_workers=4)
-    
+    train_dataset = PhonemeDataset(
+        list_file=dataset_dir / "train.txt",
+        root_dir=dataset_dir
+    )
+    test_dataset = PhonemeDataset(
+        list_file=dataset_dir / "test.txt",
+        root_dir=dataset_dir
+    )
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=config.hyper_params.batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=4,
+        collate_fn=collate_fn
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=config.hyper_params.batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=4,
+        collate_fn=collate_fn
+    )
+
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=float(config.hyper_params.learning_rate))
-    
+    optimizer = optim.AdamW(
+        params=model.parameters(),
+        lr=float(config.hyper_params.learning_rate)
+    )
+
+    scaler = GradScaler()
+
     log_manager = LogManager()
-    
-    experiment_id = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{config.model_name}"
+
+    experiment_id = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
     save_folder = project_root / "trained_models" / experiment_id
     os.makedirs(save_folder, exist_ok=True)
-    
+
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
     log_manager.save_config(config_dict, save_folder)
@@ -221,11 +218,14 @@ def main():
     min_valid_loss = 100000.0
 
     print(f"Start training... Experiment ID: {experiment_id}")
-    print(f"Train samples: {len(train_dataset)}, Test samples: {len(test_dataset)}")
+    print(f"Train samples: {len(train_dataset)}, "
+          f"Test samples: {len(test_dataset)}")
 
     for epoch in range(1, config.hyper_params.epochs + 1):
-        train_loss, val_loss, train_correct, val_correct, y, t, pre, ans = train_and_evaluate(
-            device, model, train_loader, test_loader, criterion, optimizer
+        (train_loss, val_loss, train_correct,
+         val_correct, y, t, pre, ans) = train_and_evaluate(
+            device, model, train_loader, test_loader, criterion,
+            optimizer, scaler
         )
 
         if y is not None:
@@ -235,15 +235,16 @@ def main():
         if val_loss < min_valid_loss:
             log_manager.save_model(model, "model", save_folder)
             min_valid_loss = val_loss
-            print(f"New best model saved at epoch {epoch} (val_loss: {val_loss:.6f})")
+            print(f"New best model saved at epoch {epoch} "
+                  f"(val_loss: {val_loss:.6f})")
 
         log_epoch = {
             'epoch': epoch,
             'train_loss': train_loss,
             'val_loss': val_loss,
-            'min_val_loss': min_valid_loss, 
-            'train_correct': train_correct.item() if torch.is_tensor(train_correct) else train_correct,
-            'val_correct': val_correct.item() if torch.is_tensor(val_correct) else val_correct,
+            'min_val_loss': min_valid_loss,
+            'train_correct': train_correct.item(),
+            'val_correct': val_correct.item(),
         }
         logs.append(log_epoch)
         log_manager.save_logs(logs, save_folder)
@@ -254,10 +255,19 @@ def main():
             "optimizer_state_dict": optimizer.state_dict(),
             "loss": val_loss
         }
-        log_manager.save_checkpoint(checkpoint_e, save_folder, file_name="checkpoint.pth")
+        log_manager.save_checkpoint(
+            checkpoint_e,
+            save_folder,
+            file_name="checkpoint.pth"
+        )
 
-        print(f"epoch: {epoch} train_loss:{train_loss:.6f} val_loss: {val_loss:.6f} min_val_loss: {min_valid_loss:.6f}")
-        print(f"train_correct: {train_correct:.4f} test_correct: {val_correct:.4f}")
+        print(f"epoch: {epoch}  "
+              f"train_loss:{train_loss:.6f} "
+              f"val_loss: {val_loss:.6f} "
+              f"min_val_loss: {min_valid_loss:.6f}")
+
+        print(f"train_correct: {train_correct:.4f} "
+              f"test_correct: {val_correct:.4f}")
 
 
 def use_device() -> str:
@@ -273,8 +283,16 @@ def set_seed(seed: int):
     np.random.seed(seed)
 
 
-def train_and_evaluate(device, model, train_loader, test_loader, criterion, optim):
-    scaler = torch.amp.GradScaler()
+def train_and_evaluate(
+    device: str,
+    model: nn.Module,
+    train_loader: DataLoader,
+    test_loader: DataLoader,
+    criterion: nn.Module,
+    optim: nn.Module,
+    scaler: GradScaler,
+) -> Tuple[float, float, int, int, torch.Tensor, torch.Tensor,
+           torch.Tensor, torch.Tensor]:
 
     epoch_train_loss, epoch_val_loss = 0.0, 0.0
     epoch_train_corrects, epoch_val_corrects = 0, 0
@@ -289,32 +307,40 @@ def train_and_evaluate(device, model, train_loader, test_loader, criterion, opti
         else:
             model.eval()
             loader = test_loader
-        
+
         for j, (v, t) in enumerate(loader):
             optim.zero_grad()
             v, t = v.to(device), t.to(device)
-            
+
             with torch.set_grad_enabled(phase == 'train'):
-                with torch.amp.autocast(device_type=str(device).split(':')[0], dtype=torch.bfloat16):
+                with autocast(device_type=device, dtype=torch.bfloat16):
                     y = model(v)
-                    
-                    if y.shape[1] != 36 and y.shape[2] == 36:
-                         y = y.permute(0, 2, 1)
-                    
-                    loss = criterion(y, t)
-                    
+
+                    # Permute to (Batch, Channels, Time) for loss calculation
+                    # y: (Batch, Time, 36) -> (Batch, 36, Time)
+                    y = y.permute(0, 2, 1)
+
+                    # t: (Batch, Time, 36) -> (Batch, 36, Time)
+                    t = t.permute(0, 2, 1)
+
+                    # Target for CrossEntropyLoss should be indices
+                    # (Batch, Time)
+                    t_indices = torch.argmax(t, dim=1)
+
+                    loss = criterion(y, t_indices)
+
                     pre = torch.argmax(y, dim=1)
-                    ans = torch.argmax(t, dim=1)
+                    ans = t_indices
 
                     if phase == 'train':
                         scaler.scale(loss).backward()
                         scaler.step(optim)
                         scaler.update()
-                    
+
                         epoch_train_loss += loss.item() * v.size(0)
                         epoch_train_corrects += torch.sum(pre == ans)
                         total_train_frames += (ans.size(0) * ans.size(1))
-                    
+
                     else:
                         epoch_val_loss += loss.item() * v.size(0)
                         epoch_val_corrects += torch.sum(pre == ans)
@@ -330,13 +356,24 @@ def train_and_evaluate(device, model, train_loader, test_loader, criterion, opti
         epoch_train_loss = epoch_train_loss / len(train_loader.dataset)
     if len(test_loader.dataset) > 0:
         epoch_val_loss = epoch_val_loss / len(test_loader.dataset)
-    
+
     if total_train_frames > 0:
-        epoch_train_corrects = epoch_train_corrects.double() / total_train_frames
+        epoch_train_corrects = (
+            epoch_train_corrects.double() / total_train_frames
+        )
     if total_val_frames > 0:
         epoch_val_corrects = epoch_val_corrects.double() / total_val_frames
-        
-    return epoch_train_loss, epoch_val_loss, epoch_train_corrects, epoch_val_corrects, y_out, t_out, pre_out, ans_out
+
+    return (
+        epoch_train_loss,
+        epoch_val_loss,
+        epoch_train_corrects,
+        epoch_val_corrects,
+        y_out,
+        t_out,
+        pre_out,
+        ans_out
+    )
 
 
 if __name__ == '__main__':
