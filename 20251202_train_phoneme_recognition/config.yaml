@@ -14,16 +14,12 @@ hyperparameters:
   special: false
 
 model_params:
-  in_channels: 80
-  hidden_channels: 256
-  out_channels: 36  # 音素数
-  kernel_size: 3
-  dilation_rate: 2
-  n_layers: 4
-  p_dropout: 0.1
-  layernorm: true
-  activation: "gate"
-  bidirectional: true
-  l2softmax: false
-  continuous: false
-  fc_size: 128
+  n_inputs: 80
+  n_outputs: 80
+  n_layers: 2
+  hidden_size: 128
+  fc_size: 4096
+  dropout: 0.2
+  bidirectional: False
+  l2softmax: False
+  continuous: False

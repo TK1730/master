@@ -139,12 +139,12 @@ def create_model(config: dict, load_checkpoint: str = None) -> nn.Module:
     """LSTMモデルの作成
     """
     lstm_net = LSTM_net(
-        n_inputs=config["in_channels"],
-        n_outputs=config["out_channels"],
+        n_inputs=config["n_inputs"],
+        n_outputs=config["n_outputs"],
         n_layers=config["n_layers"],
-        hidden_size=config["hidden_channels"],
+        hidden_size=config["hidden_size"],
         fc_size=config["fc_size"],
-        dropout=config["p_dropout"],
+        dropout=config["dropout"],
         bidirectional=config["bidirectional"],
         l2softmax=config["l2softmax"],
         continuous=config["continuous"]
