@@ -75,6 +75,14 @@ hyperparameters:
 ### **学習の実行**
 
 プロジェクトルート (`./master`) から以下のコマンドを実行します。
+
+データセットの準備
+```bash
+python 20251202_train_phoneme_recognition/scripts/prepare_dataset.py `
+--test_rate 0.1 `
+--seed 1234
+```
+
 ※ `scripts/train.py` 内のデータセットパス設定を適切に行う必要があります。
 
 ```bash
