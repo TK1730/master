@@ -1,0 +1,1 @@
+'a', 'b', 'by', 'ch', 'd', 'dy', 'e', 'f', 'g', 'gy', 'h', 'hy', 'i', 'j', 'k', 'ky', 'm', 'my', 'N', 'n', 'ny', 'o', 'p', 'py', 'r', 'ry', 's', 'sh', 't', 'ts', 'u', 'v', 'w', 'y', 'z', 'sil', 'q', 'A', 'E', 'I', 'O', 'U', 'a:', 'e:', 'i:', 'o:', 'u:', 'pau', 'silB', 'silE', 'sp', 'cl'
