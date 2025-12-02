@@ -6,13 +6,19 @@ from typing import Union
 import cv2
 import numpy as np
 from pathlib import Path
+import yaml
+import sys
+import datetime
+import pandas as pd
+import os
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset
-import pandas as pd
-import os
+from torch.utils.data import DataLoader, Dataset
+
+# Add parent directory to path to allow importing modules
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from model.lstm_net_rev import LSTM_net
 
@@ -42,6 +48,49 @@ class LogManager:
         チェックポイントを保存する
         """
         torch.save(checkpoint, f"{folder}/{file_name}")
+        
+    def save_config(self, config, folder):
+        """
+        設定を保存する
+        """
+        with open(f"{folder}/config.yaml", 'w') as f:
+            yaml.dump(config, f)
+
+
+class PhonemeDataset(Dataset):
+    def __init__(self, list_file, root_dir=None):
+        self.root_dir = root_dir
+        with open(list_file, 'r', encoding='utf-8') as f:
+            self.files = [line.strip() for line in f]
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        base_path = self.files[idx]
+        if self.root_dir:
+            file_path = os.path.join(self.root_dir, base_path)
+        else:
+            file_path = base_path
+            
+        msp_path = file_path + "_msp.npy"
+        ppg_path = file_path + "_ppgmat.npy"
+        
+        try:
+            msp = np.load(msp_path).astype(np.float32)
+            ppg = np.load(ppg_path).astype(np.float32)
+            
+            # Transpose to (Channels, Time) if needed
+            # Assuming model expects (Batch, Channels, Time) based on 'in_channels'
+            if msp.shape[1] == 80: # (Time, 80) -> (80, Time)
+                msp = msp.T
+            if ppg.shape[1] == 36: # (Time, 36) -> (36, Time)
+                ppg = ppg.T
+                
+            return msp, ppg
+        except Exception as e:
+            print(f"Error loading {base_path}: {e}")
+            raise e
 
 
 def draw_msp(y, t):
@@ -70,51 +119,39 @@ def draw_heatmap(pre, ans):
     ans = ans.to(torch.int32).to('cpu').detach().numpy()
     pre = pre.to(torch.int32).to('cpu').detach().numpy()
     heatmap = np.zeros((36, 36), dtype=np.float32)
-    heatmap[ans, pre] += 1
-    heatmap = cv2.resize(heatmap, dsize=None, fx=4, fy=4, interpolation=cv2.INTER_LINEAR)
+    
+    ans = ans.flatten()
+    pre = pre.flatten()
+    
+    mask = (ans < 36) & (pre < 36)
+    ans = ans[mask]
+    pre = pre[mask]
+    
+    np.add.at(heatmap, (ans, pre), 1)
+    
+    heatmap = heatmap / (heatmap.sum(axis=1, keepdims=True) + 1e-9)
+    
+    heatmap = cv2.resize(heatmap, dsize=None, fx=10, fy=10, interpolation=cv2.INTER_NEAREST)
+    heatmap = (heatmap * 255).astype(np.uint8)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    
     cv2.imshow("h-map", heatmap)
     cv2.waitKey(1)
 
 
-def create_config() -> SimpleNamespace:
+def create_config(config_path="config.yaml") -> SimpleNamespace:
     """
     設定値を作成する関数
-
-    Returns:
-        SimpleNamespace: 設定値
     """
+    with open(config_path, 'r') as f:
+        config_dict = yaml.safe_load(f)
+        
     config = SimpleNamespace()
-    config.hyper_params = SimpleNamespace(
-        epochs=3000,
-        frame_length=88,
-        batch_size=128,
-        test_rate=0.2,
-        learning_rate=2e-4,
-        train_decay=0.998,
-        eps=1.0e-9,
-        seed=1234,
-        input_type=['msp'],
-        output_type=['ppgmat'],
-        jvs=True,
-        pseudo=True,
-        whisper=True,
-        special=False
-    )
-    config.model_params = SimpleNamespace(
-        in_channels=80,
-        hidden_channels=256,
-        out_channels=36,  # 音素数
-        kernel_size=3,
-        dilation_rate=2,
-        n_layers=4,
-        p_dropout=0.1,
-        layernorm=True,
-        activation="gate",
-        bidirectional=True,
-        l2softmax=False,
-        continuous=False,
-        fc_size=128
-    )
+    config.hyper_params = SimpleNamespace(**config_dict['hyperparameters'])
+    config.model_params = SimpleNamespace(**config_dict['model_params'])
+    config.sampling_rate = config_dict.get('sampling_rate', 22050)
+    config.model_name = config_dict.get('model_name', 'LSTM_net')
+    
     return config
 
 
@@ -122,20 +159,12 @@ def softmax(x, axis=-1):
     """
     Softmax関数
     """
-    # Subtract max for numerical stability
     exp_x = np.exp(x - np.max(x))
     return exp_x / np.sum(exp_x, axis=-axis, keepdims=True)
 
 
-def create_model(config: dict, load_checkpoint: dict = None) -> nn.Module:
+def create_model(config: dict, load_checkpoint: str = None) -> nn.Module:
     """LSTMモデルの作成
-
-    Args:
-        config (dict): 設定値
-        load_checkpoint (dict, optional): 読み込むチェックポイント. Defaults to None.
-
-    Returns:
-        nn.Module: LSTMモデル
     """
     lstm_net = LSTM_net(
         n_inputs=config["in_channels"],
@@ -157,88 +186,86 @@ def main():
     """
     音素認識モデル学習
     """
-    # config設定作成
-    config = create_config()
-    # 乱数の設定
+    project_root = Path(__file__).resolve().parent.parent
+    config_path = project_root / "config.yaml"
+    
+    config = create_config(str(config_path))
+    
     set_seed(config.hyper_params.seed)
-    # デバイスの設定
     device = use_device()
-    # モデルの作成
+    
     model = create_model(config.model_params.__dict__)
     model.to(device)
-    # データローダーの作成
-    train_dataset = ""
-    test_dataset = ""
-    train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, pin_memory=True)
-    # 損失関数の設定
-    criterion = nn.CrossEntropyLoss()
-    # オプティマイザーの設定
-    optimizer = optim.Adam(model.parameters(), lr=2e-4)
     
-    # ログマネージャー
+    dataset_dir = project_root / "dataset"
+    train_dataset = PhonemeDataset(dataset_dir / "train.txt", root_dir=dataset_dir)
+    test_dataset = PhonemeDataset(dataset_dir / "test.txt", root_dir=dataset_dir)
+    
+    train_loader = DataLoader(train_dataset, batch_size=config.hyper_params.batch_size, shuffle=True, pin_memory=True, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=config.hyper_params.batch_size, shuffle=False, pin_memory=True, num_workers=4)
+    
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=float(config.hyper_params.learning_rate))
+    
     log_manager = LogManager()
-    save_folder = "result"
+    
+    experiment_id = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{config.model_name}"
+    save_folder = project_root / "trained_models" / experiment_id
     os.makedirs(save_folder, exist_ok=True)
+    
+    with open(config_path, 'r') as f:
+        config_dict = yaml.safe_load(f)
+    log_manager.save_config(config_dict, save_folder)
 
     logs = []
     min_valid_loss = 100000.0
 
-    # 学習
+    print(f"Start training... Experiment ID: {experiment_id}")
+    print(f"Train samples: {len(train_dataset)}, Test samples: {len(test_dataset)}")
+
     for epoch in range(1, config.hyper_params.epochs + 1):
         train_loss, val_loss, train_correct, val_correct, y, t, pre, ans = train_and_evaluate(
             device, model, train_loader, test_loader, criterion, optimizer
         )
 
-        # 画像表示
-        draw_msp(y, t)
-        draw_heatmap(pre, ans)
+        if y is not None:
+            draw_msp(y, t)
+            draw_heatmap(pre, ans)
 
-        # ベストモデルの保存
         if val_loss < min_valid_loss:
             log_manager.save_model(model, "model", save_folder)
             min_valid_loss = val_loss
+            print(f"New best model saved at epoch {epoch} (val_loss: {val_loss:.6f})")
 
-        # ログ保存
         log_epoch = {
             'epoch': epoch,
             'train_loss': train_loss,
             'val_loss': val_loss,
             'min_val_loss': min_valid_loss, 
-            'train_correct': train_correct,
-            'val_correct': val_correct,
+            'train_correct': train_correct.item() if torch.is_tensor(train_correct) else train_correct,
+            'val_correct': val_correct.item() if torch.is_tensor(val_correct) else val_correct,
         }
         logs.append(log_epoch)
         log_manager.save_logs(logs, save_folder)
 
-        # チェックポイント保存
         checkpoint_e = {
             "epoch": epoch,
             "model_state_dict": model.state_dict(),
-            "loss": val_loss # 修正: loss変数はループ外では最後のバッチのlossになるため、val_lossを使用するか、適切に渡す必要があるが、ここではval_lossで代用
+            "optimizer_state_dict": optimizer.state_dict(),
+            "loss": val_loss
         }
-        log_manager.save_checkpoint(checkpoint_e, save_folder, file_name="encoder_checkpoint.pth")
+        log_manager.save_checkpoint(checkpoint_e, save_folder, file_name="checkpoint.pth")
 
-        print(f"epoch: {epoch} train_loss:{train_loss:.6f} val_loss: {val_loss:.6f} min_val_loss: {min_valid_loss}")
-        print(f"train_correct: {train_correct:.2f} test_correct: {val_correct:.2f}")
+        print(f"epoch: {epoch} train_loss:{train_loss:.6f} val_loss: {val_loss:.6f} min_val_loss: {min_valid_loss:.6f}")
+        print(f"train_correct: {train_correct:.4f} test_correct: {val_correct:.4f}")
 
 
 def use_device() -> str:
-    """使用するデバイスを返す
-
-    Returns:
-        str: 使用するデバイス
-    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return str(device)
 
 
 def set_seed(seed: int):
-    """乱数の再現性を保つために乱数の種を設定する
-
-    Args:
-        seed (int): 乱数の種
-    """
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
@@ -247,23 +274,12 @@ def set_seed(seed: int):
 
 
 def train_and_evaluate(device, model, train_loader, test_loader, criterion, optim):
-    """訓練と検証を行う
-
-    Args:
-        device (torch.device): デバイス
-        model (nn.Module): モデル
-        train_loader (DataLoader): 訓練データローダー
-        test_loader (DataLoader): テストデータローダー
-        criterion (nn.Module): 損失関数
-        optim (nn.Module): オプティマイザー
-    """
-    # 反精度学習
     scaler = torch.amp.GradScaler()
 
     epoch_train_loss, epoch_val_loss = 0.0, 0.0
     epoch_train_corrects, epoch_val_corrects = 0, 0
+    total_train_frames, total_val_frames = 0, 0
 
-    # 戻り値用の変数初期化
     y_out, t_out, pre_out, ans_out = None, None, None, None
 
     for phase in ['train', 'test']:
@@ -275,51 +291,50 @@ def train_and_evaluate(device, model, train_loader, test_loader, criterion, opti
             loader = test_loader
         
         for j, (v, t) in enumerate(loader):
-            # 勾配の初期化
             optim.zero_grad()
             v, t = v.to(device), t.to(device)
+            
             with torch.set_grad_enabled(phase == 'train'):
-                with torch.amp.autocast(device_type=str(device), dtype=torch.bfloat16):
+                with torch.amp.autocast(device_type=str(device).split(':')[0], dtype=torch.bfloat16):
                     y = model(v)
-                    # loss
+                    
+                    if y.shape[1] != 36 and y.shape[2] == 36:
+                         y = y.permute(0, 2, 1)
+                    
                     loss = criterion(y, t)
+                    
                     pre = torch.argmax(y, dim=1)
                     ans = torch.argmax(t, dim=1)
 
                     if phase == 'train':
                         scaler.scale(loss).backward()
-
-                        # optimizerの更新
                         scaler.step(optim)
                         scaler.update()
                     
-                        # ロスの集計
-                        epoch_train_loss += loss.item() / len(loader)
-                        # 正解率
+                        epoch_train_loss += loss.item() * v.size(0)
                         epoch_train_corrects += torch.sum(pre == ans)
+                        total_train_frames += (ans.size(0) * ans.size(1))
                     
                     else:
-                        epoch_val_loss += loss.item() / len(loader)
-                        # 正解率
+                        epoch_val_loss += loss.item() * v.size(0)
                         epoch_val_corrects += torch.sum(pre == ans)
+                        total_val_frames += (ans.size(0) * ans.size(1))
 
-                        # 可視化用に最後のバッチのデータを保存
                         if j == len(loader) - 1:
                             y_out = y
                             t_out = t
                             pre_out = pre
                             ans_out = ans
 
-    # epochごとの正解率 (frame_lengthはconfigから取得するか、引数で渡す必要があるが、ここでは簡易的に計算)
-    # 注意: frame_lengthが未定義のため、一旦コメントアウトまたは修正が必要。
-    # 元のコードではグローバル変数的に参照していた可能性があるが、ここではloaderのdatasetサイズで割る形にする。
-    # ただし、frame_length倍されている意図が不明確なため、単純な平均正解率にするか、元のロジックを尊重するか。
-    # ここでは単純にサンプル数で割る形に修正（frame単位の正解率なら総フレーム数で割るべき）
+    if len(train_loader.dataset) > 0:
+        epoch_train_loss = epoch_train_loss / len(train_loader.dataset)
+    if len(test_loader.dataset) > 0:
+        epoch_val_loss = epoch_val_loss / len(test_loader.dataset)
     
-    # 簡易的な修正: datasetの長さ * 88 (frame_length) と仮定
-    frame_length = 88 
-    epoch_train_corrects = epoch_train_corrects.double() / (len(train_loader.dataset) * frame_length)
-    epoch_val_corrects = epoch_val_corrects.double() / (len(test_loader.dataset) * frame_length)
+    if total_train_frames > 0:
+        epoch_train_corrects = epoch_train_corrects.double() / total_train_frames
+    if total_val_frames > 0:
+        epoch_val_corrects = epoch_val_corrects.double() / total_val_frames
         
     return epoch_train_loss, epoch_val_loss, epoch_train_corrects, epoch_val_corrects, y_out, t_out, pre_out, ans_out
 
