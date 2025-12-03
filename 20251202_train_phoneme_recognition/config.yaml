@@ -1,21 +1,25 @@
 sampling_rate: 22050
 model_name: LSTM_net
 hyperparameters:
-  epochs: 1500
+  epochs: 3000
   batch_size: 128
   learning_rate: 2e-4
   frame_length: 88
   input_type: ['msp']
   output_type: ['ppgmat'] # Phoneme Posterior Gram
   seed: 1234
+  jvs: true
+  pseudo: true
+  whisper: true
+  special: false
 
 model_params:
   n_inputs: 80
-  n_outputs: 36
+  n_outputs: 80
   n_layers: 2
   hidden_size: 128
   fc_size: 4096
   dropout: 0.2
-  bidirectional: True
+  bidirectional: False
   l2softmax: False
   continuous: False
