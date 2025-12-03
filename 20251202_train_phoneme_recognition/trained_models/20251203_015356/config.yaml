@@ -1,0 +1,23 @@
+hyperparameters:
+  batch_size: 128
+  epochs: 3000
+  frame_length: 88
+  input_type:
+  - msp
+  learning_rate: 2e-4
+  output_type:
+  - ppgmat
+  seed: 1234
+
+model_name: LSTM_net
+model_params:
+  bidirectional: false
+  continuous: false
+  dropout: 0.2
+  fc_size: 4096
+  hidden_size: 128
+  l2softmax: false
+  n_inputs: 80
+  n_layers: 2
+  n_outputs: 80
+sampling_rate: 22050

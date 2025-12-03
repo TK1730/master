@@ -165,6 +165,7 @@ def main():
 
     set_seed(config.hyper_params.seed)
     device = use_device()
+    print(f"use device: {device}")
 
     model = create_model(config.model_params.__dict__)
     model.to(device)
@@ -184,7 +185,7 @@ def main():
         batch_size=config.hyper_params.batch_size,
         shuffle=True,
         pin_memory=True,
-        num_workers=4,
+        num_workers=0,
         collate_fn=collate_fn
     )
     test_loader = DataLoader(
@@ -192,7 +193,7 @@ def main():
         batch_size=config.hyper_params.batch_size,
         shuffle=False,
         pin_memory=True,
-        num_workers=4,
+        num_workers=0,
         collate_fn=collate_fn
     )
 
@@ -278,8 +279,6 @@ def use_device() -> str:
 def set_seed(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
 
 
