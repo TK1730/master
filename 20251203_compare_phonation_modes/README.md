@@ -1,15 +1,15 @@
 # **Phonation Mode Comparison**
 
 Experiment ID: 20251203_compare_phonation_modes
-Date: 2025-12-03
+Date: 2025-12-04
 Author: [Your Name]
 
 ## **1. 概要 (Overview)**
 
-本実験は、**VITSによる疑似ささやき声が目標の疑似ささやき声に近づいたのか** を検証するために、**VITS生成音声と目標音声** を用いて **音響解析** を行い、その類似性や特性を評価するものです。
+本実験は、**vitsによる疑似ささやき声がどれだけ疑似ささやき声に近づいたのか** を検証するために、**vitsによる声質変換** を行い、**疑似ささやき声への近さ** を定量的に評価するものです。
 
-*   **主な検証仮説:** VITSによって変換された疑似ささやき声は、目標とする疑似ささやき声の音響的特徴に近づいているか。
-*   **ゴール:** VITS生成音声と目標音声の比較検証。
+*   **主な検証仮説:** vitsによる声質変換でささやき声が疑似ささやき声に声質変換されているのではないか
+*   **ゴール:** 疑似ささやき声にどれだけ近づいたのか定量的な評価を行う
 
 ## **2. 実験条件 (Conditions)**
 
@@ -17,9 +17,9 @@ Author: [Your Name]
 
 | ラベル (ID) | 説明 | データソース (Path) | 備考 |
 | :--- | :--- | :--- | :--- |
-| **Gen (生成)** | VITSによる疑似ささやき声 | `dataset/converted_whisper2voice_v2` | 検証対象 |
-| **Target (目標)** | 目標 疑似ささやき声 | `dataset/preprocessed/jvs_ver1/nonpara30w_ver2` | 目標とする声質 |
-| **Ref (参照)** | ささやき声 | `dataset/preprocessed/jvs_ver1/whisper10` | 元のささやき声 |
+| **Target (目標)** | ターゲットの疑似ささやき声 | `20251203_compare_phonation_modes/data/nonpara30w_ver2` | 目標とする声質 |
+| **Gen (生成)** | vitsによる疑似ささやき声 | `20251203_compare_phonation_modes/data/whisper_converted_v2` | 検証対象 |
+| **Ref (参照)** | ベースラインとしてささやき声 | `20251203_compare_phonation_modes/data/whisper10` | 元のささやき声 |
 
 ## **3. 手法詳細 (Methodology)**
 
@@ -27,14 +27,16 @@ Author: [Your Name]
 
 使用スクリプト: `scripts/[script_name].py` (TBD)
 
-1.  **Step 1:** [処理内容 A]
-2.  **Step 2:** [処理内容 B]
+1.  **Step 1:** DTW (Dynamic Time Warping) を用いてアライメントをとる
+2.  **Step 2:** MSP (Modulation Spectrum) と MCP (Mel-Cepstrum) を算出する
+3.  **Step 3:** CSVに出力する
 
 ## **4. 実験設定 (Configuration)**
 
-*   **Sampling Rate:** [Value] Hz
+*   **Sampling Rate:** 22050 Hz
 *   **Evaluation Metrics:**
-    *   [Metric A]
+    *   MSP (Modulation Spectrum)
+    *   MCP (Mel-Cepstrum)
 
 ## **5. ディレクトリ構成 (Directory Structure)**
 
@@ -42,6 +44,8 @@ Author: [Your Name]
 20251203_compare_phonation_modes/
 ├── README.md               # 本ドキュメント
 ├── scripts/                # 実験用スクリプト
+├── data/                   # 入力データ
+│   └── whisper_converted_v2 # 生成データ
 └── results/                # 出力結果
 ```
 
@@ -52,9 +56,9 @@ Author: [Your Name]
 ```bash
 # プロジェクトルートで実行
 python 20251203_compare_phonation_modes/scripts/calc_metrics.py \
-    --gen_dir dataset/converted_whisper2voice_v2 \
-    --target_dir dataset/preprocessed/jvs_ver1/nonpara30w_ver2 \
-    --ref_dir dataset/preprocessed/jvs_ver1/whisper10 \
+    --gen_dir 20251203_compare_phonation_modes/data/whisper_converted_v2 \
+    --target_dir 20251203_compare_phonation_modes/data/nonpara30w_ver2 \
+    --ref_dir 20251203_compare_phonation_modes/data/whisper10 \
     --output_dir 20251203_compare_phonation_modes/results
 ```
 
@@ -64,7 +68,8 @@ python 20251203_compare_phonation_modes/scripts/calc_metrics.py \
 
 | Metric | Score (Target) | Score (Gen) | Diff |
 | :--- | :--- | :--- | :--- |
-| Metric A | - | - | - |
+| MSP | - | - | - |
+| MCP | - | - | - |
 
 ### **考察 (Discussion)**
 
