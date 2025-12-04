@@ -5,8 +5,8 @@ hyperparameters:
   batch_size: 128
   learning_rate: 2e-4
   frame_length: 88
-  input_type: ['msp']
-  output_type: ['ppgmat'] # Phoneme Posterior Gram
+  input_type: ["msp"]
+  output_type: ["ppgmat"]
   seed: 1234
   jvs: true
   pseudo: true
@@ -19,6 +19,6 @@ model_params:
   hidden_size: 128
   fc_size: 4096
   dropout: 0.2
-  bidirectional: True
-  l2softmax: False
-  continuous: False
+  bidirectional: true
+  continuous: false
+  l2softmax: false
