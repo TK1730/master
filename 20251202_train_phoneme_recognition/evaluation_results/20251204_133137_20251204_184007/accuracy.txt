@@ -1,0 +1,6 @@
+Model evaluated: G:\terashima\master\20251202_train_phoneme_recognition\trained_models\20251204_133137\model.pth
+------------------------------
+all: 0.8840
+voiced: 0.9115
+pseudo_whisper: 0.9015
+whisper: 0.7129
