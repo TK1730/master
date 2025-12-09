@@ -2,13 +2,22 @@ import argparse
 import csv
 import numpy as np
 import librosa
+import pyworld as pw
 from pathlib import Path
 from tqdm import tqdm
-from scipy.fftpack import dct
-from scipy.spatial.distance import cdist
 
 from utils import functions
 from utils import config
+
+
+def compute_mcep(wav, sr, n_mcep=24, frame_period=5.0):
+    """PyWorldを使ってメルケプストラム(MCEP)を抽出する"""
+    wav = wav.astype(np.float64)
+    f0, t = pw.dio(wav, sr, frame_period=frame_period)
+    f0 = pw.stonemask(wav, f0, t, sr)
+    sp = pw.cheaptrick(wav, f0, t, sr)
+    mcep = pw.code_spectral_envelope(sp, sr, n_mcep)
+    return mcep
 
 
 def compute_log_mel(
@@ -24,6 +33,7 @@ def compute_log_mel(
     sp, _ = librosa.magphase(D)
 
     # メルフィルタバンク
+    # ※ fmaxはサンプリングレートに合わせて調整してください (例: sr/2)
     mel_basis = librosa.filters.mel(
         sr=sr,
         n_fft=n_fft,
@@ -33,80 +43,64 @@ def compute_log_mel(
     )
     mel_sp = np.dot(mel_basis, sp)
 
-    # 対数変換
+    # 対数変換 (dB)
     log_mel = functions.dynamic_range_compression(mel_sp)
     return log_mel.T  # (Time, n_mels)
 
 
-def calculate_mcd_with_dtw(ref_wav, gen_wav, sr, n_mcep=13):
-    """
-    DTWを用いてアライメントを取り、MCD (dB) を計算する。
-    acoustic_analysis.pyと同じ方法でDCTを使用して
-    メルケプストラム係数を計算。
+def calculate_mcd_with_dtw(ref_wav, gen_wav, sr, n_mcep=24):
+    """DTWを用いてアライメントを取り、MCD (dB) を計算する"""
+    # 1. 特徴量抽出 (MCEP)
+    # n_mcepは通常24次元前後が使われます
+    ref_mcep = compute_mcep(ref_wav, sr, n_mcep)
+    gen_mcep = compute_mcep(gen_wav, sr, n_mcep)
 
-    Parameters:
-        ref_wav: 参照音声波形
-        gen_wav: 生成音声波形
-        sr: サンプリングレート
-        n_mcep: メルケプストラム係数の次数（デフォルト13）
+    # 2. パワー項(0次元目)の除去 (音量差の影響を無視するため)
+    ref_mcep_nopower = ref_mcep[:, 1:]
+    gen_mcep_nopower = gen_mcep[:, 1:]
 
-    Returns:
-        float: MCD値 [dB]
-    """
-    # 1. 対数メルスペクトログラムを抽出
-    ref_mel = compute_log_mel(ref_wav, sr)  # (Time, n_mels)
-    gen_mel = compute_log_mel(gen_wav, sr)  # (Time, n_mels)
-
-    # 2. DTWによるアライメント計算
-    # コスト行列を計算（ユークリッド距離）
-    C = cdist(ref_mel, gen_mel, metric='euclidean')
-
-    # librosaのDTWを実行してアライメントパスを取得
-    D, wp = librosa.sequence.dtw(C=C, backtrack=True)
-
-    # アライメントパスに基づいて両方のスペクトログラムを整列
-    ref_mel_aligned = ref_mel[wp[:, 0]]
-    gen_mel_aligned = gen_mel[wp[:, 1]]
-
-    # 3. DCT-IIを適用してメルケプストラム係数を計算
-    # 対数メルスペクトログラムは既に対数圧縮されているので直接DCTを適用
-    ref_mcc = dct(ref_mel_aligned, type=2, axis=1, norm='ortho')[:, :n_mcep]
-    gen_mcc = dct(gen_mel_aligned, type=2, axis=1, norm='ortho')[:, :n_mcep]
-
-    # 4. MCDを計算: 10/ln(10) * sqrt(2 * sum((mcc1 - mcc2)^2))
-    # 通常は0次成分（パワー）を除外する
-    K = 10.0 / np.log(10.0) * np.sqrt(2.0)
-    mcd = K * np.mean(
-        np.sqrt(np.sum((ref_mcc[:, 1:] - gen_mcc[:, 1:]) ** 2, axis=1))
+    # 3. DTWによるアライメント計算
+    # librosa.sequence.dtw は (Feature, Time) の形を期待するため転置します
+    d, path = librosa.sequence.dtw(
+        ref_mcep_nopower.T,
+        gen_mcep_nopower.T,
+        metric='euclidean'
     )
 
-    return float(mcd)
+    # 4. 距離の計算
+    # path は (ref_index, gen_index) のタプルのリスト
+    dist_sum = 0.0
+    for i, j in path:
+        diff = ref_mcep_nopower[i] - gen_mcep_nopower[j]
+        dist_sum += np.sqrt(np.sum(diff ** 2))
+
+    mean_dist = dist_sum / len(path)
+
+    # 5. dB単位への変換係数
+    k_mcd = (10 * np.sqrt(2)) / np.log(10)
+    mcd_db = k_mcd * mean_dist
+
+    return mcd_db
 
 
 def calculate_mel_mse_with_dtw(ref_wav, gen_wav, sr):
-    """
-    DTWを用いてアライメントを取り、メルスペクトログラムのMSEを計算する。
-    acoustic_analysis.pyと同じ方法を使用。
-    """
+    """DTWを用いてアライメントを取り、メルスペクトログラムのMSEを計算する"""
     # 1. 特徴量抽出 (Log Mel Spectrogram)
-    ref_mel = compute_log_mel(ref_wav, sr)  # (Time, n_mels)
-    gen_mel = compute_log_mel(gen_wav, sr)  # (Time, n_mels)
+    ref_mel = compute_log_mel(ref_wav, sr)
+    gen_mel = compute_log_mel(gen_wav, sr)
 
-    # 2. DTWによるアライメント
-    # コスト行列を計算（ユークリッド距離）
-    C = cdist(ref_mel, gen_mel, metric='euclidean')
-
-    # librosaのDTWを実行してアライメントパスを取得
-    D, wp = librosa.sequence.dtw(C=C, backtrack=True)
-
-    # アライメントパスに基づいて両方のスペクトログラムを整列
-    ref_mel_aligned = ref_mel[wp[:, 0]]
-    gen_mel_aligned = gen_mel[wp[:, 1]]
+    # 2. DTWによるアライメント (メルスペクトル同士で最短経路を探索)
+    d, path = librosa.sequence.dtw(ref_mel.T, gen_mel.T, metric='euclidean')
 
     # 3. MSE (Mean Squared Error) の計算
-    mse = np.mean((ref_mel_aligned - gen_mel_aligned) ** 2)
+    sq_err_sum = 0.0
+    for i, j in path:
+        diff = ref_mel[i] - gen_mel[j]
+        sq_err_sum += np.mean(diff ** 2)  # フレームごとのMSE
 
-    return float(mse)
+    mean_mse = sq_err_sum / len(path)
+
+    return mean_mse
 
 
 def main(args):

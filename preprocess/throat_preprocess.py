@@ -21,7 +21,7 @@ OUTPUT_WAV_SAMPLING_RATE = config.sr
 # 前処理の対象外とする音声ファイルの最小の長さ 0.5sec以下は除外する
 MIN_WAV_LENGTH = config.sr * 0.5
 # 音素辞書の生成
-PHONEMEDICT = functions.generate_phoneme_dict("./preprocess/phoneme.txt")
+PHONEMEDICT, _ = functions.generate_phoneme_dict("./preprocess/phoneme.txt")
 
 
 def preprocess_throat_data(speaker_id: int, throat_dataset_path: Path):

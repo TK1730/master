@@ -19,7 +19,7 @@ output_wav_sampling_rate = config.sr
 # 前処理の対象外とする音声ファイルの最小の長さ 2sec以下は除外する
 min_wav_length = config.sr * 2
 # 音素辞書の生成
-phonemedict = functions.generate_phoneme_dict("./preprocess/phoneme.txt")
+phonemedict, _ = functions.generate_phoneme_dict("./preprocess/phoneme.txt")
 
 
 class BlockSizeException(Exception):

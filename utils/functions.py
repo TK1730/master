@@ -1,5 +1,5 @@
+from PIL.Image import enum
 import librosa
-import pyworld
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,8 +11,20 @@ import pyloudnorm as pyln
 import re
 import unicodedata
 
-# 音声
-def wav2msp(file_path, sr=config.sr, hop_length=config.hop_length, n_fft=config.n_fft, fmin=config.fmin, fmax=config.fmax, n_mels=config.n_mels, htk=False, norm='slaney', pad_mode='reflect', power=1):
+
+#  音声
+def wav2msp(
+    file_path,
+    sr=config.sr,
+    hop_length=config.hop_length,
+    n_fft=config.n_fft,
+    fmin=config.fmin,
+    fmax=config.fmax,
+    n_mels=config.n_mels,
+    htk=False,
+    norm='slaney',
+    pad_mode='reflect',
+    power=1):
     """
     Load audio to convert to msp
     """
@@ -22,17 +34,20 @@ def wav2msp(file_path, sr=config.sr, hop_length=config.hop_length, n_fft=config.
     msp = np.matmul(sp,config.mel_filter)
     return msp
 
+
 def dynamic_range_compression(x, C=1, clip_val=1e-5):
     """
     convert logscale
     """
     return np.log(x.clip(clip_val,None))
 
+
 def dynamic_range_decompression(x, C=1):
     """
     convert linear
     """
     return np.exp(x)
+
 
 def interp1d(f0, kind='slinear'):
     ndim = f0.ndim
@@ -60,6 +75,7 @@ def interp1d(f0, kind='slinear'):
         return continuous_f0[:, None]
     return continuous_f0
 
+
 mel_freqs = librosa.mel_frequencies(n_mels=config.n_mels, fmin=config.fmin, fmax=config.fmax, htk=False).reshape(1,-1)
 mel_filter = librosa.filters.mel(sr=config.sr, n_fft = config.n_fft, fmin= config.fmin, fmax= config.fmax, n_mels = config.n_mels, htk = False, norm='slaney').T
 
@@ -74,7 +90,8 @@ def msp2graph(msp, label='msp'):
     ax.set_ylabel("Frequency [Hz]")
     plt.show()
     mpl.pyplot.close()
-    
+
+
 def f02graph(f0, label='f0'):
     fig, ax = plt.subplots(figsize=(8,4))
     ax.plot(f0, linewidth=2, label=label)
@@ -83,6 +100,7 @@ def f02graph(f0, label='f0'):
     # ax.legend()
     plt.show()
     mpl.pyplot.close()
+
 
 def ap2graph(ap, label='ap', sr=config.sr, hop_length=config.hop_length):
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -96,6 +114,7 @@ def ap2graph(ap, label='ap', sr=config.sr, hop_length=config.hop_length):
     plt.show()
     mpl.pyplot.close()
 
+
 def sp2graph(sp, label='cp', sr=config.sr, hop_length=config.hop_length):
     fig, ax = plt.subplots(figsize=(8,3))
     ax.set_xlabel("Time [sec]")
@@ -107,6 +126,7 @@ def sp2graph(sp, label='cp', sr=config.sr, hop_length=config.hop_length):
     plt.tight_layout()
     plt.show()
     mpl.pyplot.close()
+
 
 def best_model(folder):
     """
@@ -134,14 +154,8 @@ def best_model(folder):
 
     else:
         print('pathが通っていません')
+        return None
 
-def TrainDic(folder):
-    """
-    学習時に使用したデータをlistで返す
-    """
-    path = Path(folder)
-    if path.is_dir() == True:
-        file = path.glob('*')
 
 def generate_phoneme_dict(path='./phoneme.txt'):
     """ Generate a phoneme dictionary from a text file.
@@ -154,32 +168,52 @@ def generate_phoneme_dict(path='./phoneme.txt'):
     """
     phonemelist = []
 
-    f = open(path)                     #フォンテキストを開く
-    for phoneme in f.readlines():
-        phonemelist = phoneme.replace("'","").split(', ')
-    f.close()
+    with open(path) as f:
+        phonemelist_raw = f.readlines().strip().replace("'","").split(', ')
 
-    phonemedict = {p: phonemelist.index(p) for p in phonemelist}    # 辞書型にしている
-    phonemedict['a:'] = phonemedict['a'] # adhoc
-    phonemedict['i:'] = phonemedict['i'] # adhoc
-    phonemedict['u:'] = phonemedict['u'] # adhoc
-    phonemedict['e:'] = phonemedict['e'] # adhoc
-    phonemedict['o:'] = phonemedict['o'] # adhoc
-    phonemedict['A'] = phonemedict['a'] # adhoc
-    phonemedict['I'] = phonemedict['i'] # adhoc
-    phonemedict['U'] = phonemedict['u'] # adhoc
-    phonemedict['E'] = phonemedict['e'] # adhoc
-    phonemedict['O'] = phonemedict['o'] # adhoc
-    phonemedict['pau'] = phonemedict['sil'] # adhoc
-    phonemedict['silB'] = phonemedict['sil'] # adhoc
-    phonemedict['silE'] = phonemedict['sil'] # adhoc
-    phonemedict['q'] = phonemedict['sil']
-    phonemedict['sp'] = phonemedict['sil'] # adhoc
-    phonemedict['cl'] = phonemedict['sil']
+    phoneme_to_idx_dict = {p: i for i, p in enumerate(phonemelist_raw)}
 
-    print(phonemedict)
+    phoneme_to_idx_dict['a:'] = phoneme_to_idx_dict.get("a", -1)
+    phoneme_to_idx_dict['i:'] = phoneme_to_idx_dict.get("i", -1)
+    phoneme_to_idx_dict['u:'] = phoneme_to_idx_dict.get("u", -1)
+    phoneme_to_idx_dict['e:'] = phoneme_to_idx_dict.get("e", -1)
+    phoneme_to_idx_dict['o:'] = phoneme_to_idx_dict.get("o", -1)
+    phoneme_to_idx_dict['A'] = phoneme_to_idx_dict.get("a", -1)
+    phoneme_to_idx_dict['I'] = phoneme_to_idx_dict.get("i", -1)
+    phoneme_to_idx_dict['U'] = phoneme_to_idx_dict.get("u", -1)
+    phoneme_to_idx_dict['E'] = phoneme_to_idx_dict.get("e", -1)
+    phoneme_to_idx_dict['O'] = phoneme_to_idx_dict.get("o", -1)
+    phoneme_to_idx_dict['pau'] = phoneme_to_idx_dict.get("sil", -1)
+    phoneme_to_idx_dict['silB'] = phoneme_to_idx_dict.get("sil", -1)
+    phoneme_to_idx_dict['silE'] = phoneme_to_idx_dict.get("sil", -1)
+    phoneme_to_idx_dict['q'] = phoneme_to_idx_dict.get("sil", -1)
+    phoneme_to_idx_dict['sp'] = phoneme_to_idx_dict.get("sil", -1)
+    phoneme_to_idx_dict['cl'] = phoneme_to_idx_dict.get("sil", -1)
 
-    return phonemedict
+    # 重複する音素をリストから削除 ( 逆引き辞書で正規の音素を優先するため )
+    remove_phoneme = [
+    'a:', 'i:', 'u:', 'e:', 'o:',
+    'A', 'I', 'U', 'E', 'O',
+    'pau', 'silB', 'silE', 'q', 'sp', 'cl'
+    ]
+
+
+    for p in remove_phoneme:
+        if p in phonemelist_raw:
+            phonemelist_raw.remove(p)
+
+
+    # 音素から数値に変換
+    phoneme_to_idx_dict = {
+        k: v for k, v in phoneme_to_idx_dict.items() if v != -1
+    }
+
+    # 数値から音素に変換
+    idx_to_phoneme_dict = {
+        v: k for k, v in phoneme_to_idx_dict.items()
+    }
+
+    return phoneme_to_idx_dict, idx_to_phoneme_dict
 
 def loudness_average(file):
     wav, sr = librosa.load(file, sr=config.sr)

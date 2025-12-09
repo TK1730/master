@@ -28,15 +28,15 @@ Author: [Your Name]
 使用スクリプト: `scripts/[script_name].py` (TBD)
 
 1.  **Step 1:** DTW (Dynamic Time Warping) を用いてアライメントをとる
-2.  **Step 2:** MSP (Modulation Spectrum) と MCP (Mel-Cepstrum) を算出する
+2.  **Step 2:** Mel-MSE (Mel-Spectrogram Mean Squared Error) と MCD (Mel-Cepstrum Distortion) を算出する
 3.  **Step 3:** CSVに出力する
 
 ## **4. 実験設定 (Configuration)**
 
 *   **Sampling Rate:** 22050 Hz
 *   **Evaluation Metrics:**
-    *   MSP (Modulation Spectrum)
-    *   MCP (Mel-Cepstrum)
+    *   Mel-MSE (Mel-Spectrogram Mean Squared Error)
+    *   MCD (Mel-Cepstrum Distortion)
 
 ## **5. ディレクトリ構成 (Directory Structure)**
 
@@ -68,8 +68,8 @@ python 20251203_compare_phonation_modes/scripts/calc_metrics.py \
 
 | Metric | Score (Target) | Score (Gen) | Diff |
 | :--- | :--- | :--- | :--- |
-| MSP | - | - | - |
-| MCP | - | - | - |
+| Mel-MSE | - | - | - |
+| MCD | - | - | - |
 
 ### **考察 (Discussion)**
 

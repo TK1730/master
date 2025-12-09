@@ -1,7 +1,6 @@
 import os
 import sys
 import platform
-import subprocess
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -33,35 +32,39 @@ def create_symlink(source: Path, link_name: Path, target_is_directory=True):
     # 親ディレクトリ作成
     link_name.parent.mkdir(parents=True, exist_ok=True)
 
+    # 相対パスを計算
+    rel_source = os.path.relpath(source, link_name.parent)
+
     try:
         if platform.system() == 'Windows':
             # === Windowsの場合 ===
-            if target_is_directory:
-                # ディレクトリなら「ジャンクション」を作成
-                # (管理者権限不要で安定している)
-                cmd = f'mklink /J "{link_name}" "{source}"'
-                subprocess.run(cmd, shell=True, check=True)
-                print(f"[Created Junction] {link_name} -> {source}")
-                return True, f"Created Junction: {link_name} -> {source}"
-            else:
-                # ファイルなら通常のシンボリックリンク
-                # (管理者権限が必要な場合あり)
-                os.symlink(source, link_name)
-                print(f"[Created Symlink] {link_name} -> {source}")
-                return True, f"Created Symlink: {link_name} -> {source}"
+            # 相対パスでシンボリックリンクを作成
+            # (Windows 10以降、開発者モードなら管理者権限不要で作成可能)
+            os.symlink(
+                rel_source,
+                link_name,
+                target_is_directory=target_is_directory
+            )
+            print(f"[Created Symlink] {link_name} -> {rel_source}")
+            return True, f"Created Symlink: {link_name} -> {rel_source}"
         else:
             # === Linux / Macの場合 ===
-            os.symlink(source, link_name)
-            print(f"[Created Symlink] {link_name} -> {source}")
-            return True, f"Created Symlink: {link_name} -> {source}"
+            os.symlink(
+                rel_source,
+                link_name,
+                target_is_directory=target_is_directory
+            )
+            print(f"[Created Symlink] {link_name} -> {rel_source}")
+            return True, f"Created Symlink: {link_name} -> {rel_source}"
 
     except Exception as e:
         error_msg = f"Failed to create link: {link_name}\nReason: {e}"
         print(f"[Error] {error_msg}")
-        if platform.system() == 'Windows' and not target_is_directory:
+        if platform.system() == 'Windows':
             tip = (
-                "Tip: Windowsでファイルのシンボリックリンクを作るには"
-                "管理者権限、または開発者モードの有効化が必要です。"
+                "Tip: Windowsで相対パスのシンボリックリンクを作るには\n"
+                "管理者権限で実行するか、Windowsの設定で「開発者モード」を有効にしてください。\n"
+                "(従来のジャンクションは絶対パスしかサポートしていないため、シンボリックリンクを使用しています)"
             )
             print(tip)
             error_msg += f"\n{tip}"

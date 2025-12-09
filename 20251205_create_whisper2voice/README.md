@@ -6,7 +6,7 @@ Author: terashima
 
 ## **1. 概要 (Overview)**
 
-本実験は、**VITSによる疑似ささやき声を有声発話に変換して音声が生成できるか** を検証するために、**whisper_converted_v2とwhisper10** を用いて **音声生成とメルスペクトログラム比較** を行い、**MSE (Mean Squared Error) とMel Cepstral Distortion** を算出・可視化するものです。
+本実験は、**VITSによる疑似ささやき声を有声発話に変換してささやき声を入力するより精度が上がるか** を検証するために、**whisper_converted_v2とwhisper10** を用いて **音声生成とメルスペクトログラム比較** を行い、**MSE (Mean Squared Error) とMel Cepstral Distortion** を算出・可視化するものです。
 
 * **主な検証仮説:** VITS生成の疑似ささやき声を有声発話に変換することで、自然な有声音声を生成できる
 * **ゴール:** 生成された有声発話音声とターゲット音声(nonpara30)のメルスペクトログラムのMSEとMel Cepstral Distortionを計算し、変換の品質を定量評価する
