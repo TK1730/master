@@ -57,12 +57,13 @@ def load_phoneme_model_inf(
         n_inputs=80,
         n_outputs=36,
         n_layers=2,
-        hidden_size=128,
+        hidden_size=256,
         fc_size=4096,
         dropout=0.2,
-        bidirectional=True
+        bidirectional=False
     )
-    model_path, _ = functions.best_model(model_path)
+    if Path(model_path).is_dir():
+        model_path, _ = functions.best_model(model_path)
     model_info = torch.load(model_path, map_location=device)
     model.load_state_dict(model_info)
     model.eval()
@@ -193,10 +194,16 @@ def main(args):
 
     print(f"Processing {len(gen_files)} files...")
     for gen_path in tqdm(gen_files):
-        filename = Path(gen_path.parts[-3] + "/" + gen_path.stem)
+        filename = Path(gen_path.parts[-2] + "/" + gen_path.stem)
         # print(filename)
 
+        if len(sim_dict) > 0 and gen_path == gen_files[0]:
+            print(f"DEBUG: sim_dict keys sample: {list(sim_dict.keys())[:5]}")
+        
+        # print(f"DEBUG: Checking {filename}")
+
         if filename not in sim_dict:
+            # print(f"DEBUG: {filename} not in sim_dict")
             continue
 
         rel_path = gen_path.relative_to(gen_dir)

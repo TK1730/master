@@ -11,3 +11,16 @@ results/*
 *.png
 *.npy
 *.pth
+*.json
+*.pt
+*.pyc
+*.pyd
+*.lib
+*.cleaned
+events*
+*.bin
+*.txt
+*.safetensors
+*.yaml
+*.pyx
+core*

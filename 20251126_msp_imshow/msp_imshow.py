@@ -3,20 +3,38 @@ import librosa
 import librosa.display
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+import os
+from tqdm import tqdm
+
+sys.path.append('..')
+
+
 from utils import config, functions
 
-voice_path = Path(
-    './dataset/preprocessed/jvs_ver1/nonpara30w_ver2/'
-    'jvs001/wav/BASIC5000_0235.wav'
+# Base Directories
+VOICE_BASE = Path('../dataset/preprocessed/jvs_ver1/nonpara30w_ver2/')
+PSEUDO_BASE = Path('../dataset/pseudo_whisper_vits/whisper_converted_v2')
+WHISPER_BASE = Path('../dataset/preprocessed/jvs_ver1/whisper10/')
+RESULTS_DIR = Path('./results')
+
+
+def get_common_files():
+    """Find .wav files present in all three directories."""
+    # Recursively find all wav files in VOICE_BASE
+    # Relative path from base is used as key
+    voice_files = set(
+        p.relative_to(VOICE_BASE) 
+        for p in VOICE_BASE.glob('**/*.wav')
     )
-pseudo_path = Path(
-    './dataset/whisper_using_vits/'
-    'jvs001/wav/BASIC5000_0235.wav'
-    )
-whisper_path = Path(
-    './dataset/preprocessed/'
-    'jvs_ver1/whisper10/jvs001/wav/BASIC5000_0235.wav'
-    )
+    
+    # Check existence in other directories
+    common_files = []
+    for f in voice_files:
+        if (PSEUDO_BASE / f).exists() and (WHISPER_BASE / f).exists():
+            common_files.append(f)
+            
+    return sorted(list(common_files))
 
 
 def load_and_extract_melspec(audio_path, sr=22050, n_mels=80):
@@ -35,54 +53,67 @@ def load_and_extract_melspec(audio_path, sr=22050, n_mels=80):
     return lmsp
 
 
-def plot_mel_spectrograms(voice_path, pseudo_path, whisper_path):
-    """3つのメルスペクトログラムを個別に描画"""
+def plot_mel_spectrograms(voice_path, pseudo_path, whisper_path, output_path):
+    """3つのメルスペクトログラムを描画して保存"""
     # メルスペクトログラムを抽出
     voice_mel = load_and_extract_melspec(voice_path).T
     pseudo_mel = load_and_extract_melspec(pseudo_path).T
     whisper_mel = load_and_extract_melspec(whisper_path).T
-    print(voice_mel.shape, pseudo_mel.shape, whisper_mel.shape)
+    
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    
     # Voice (nonpara30)を描画
-    plt.figure(figsize=(4, 3))
     librosa.display.specshow(
-        voice_mel[:, 30:210], x_axis='time', y_axis='mel',
-        sr=22050, hop_length=config.hop_length)
-    plt.ylabel('Mel Frequency (Hz)')
-    plt.xlabel('Time (s)')
-    plt.title('pseudo (nonpara30w_ver2)', fontsize=14, fontweight='bold')
-    plt.colorbar(format='%+2.0f dB')
-    plt.tight_layout()
-    plt.show()
-
+        voice_mel, x_axis='time', y_axis='mel',
+        sr=22050, hop_length=config.hop_length, ax=axes[0])
+    axes[0].set_ylabel('Mel Frequency (Hz)')
+    axes[0].set_xlabel('Time (s)')
+    axes[0].set_title('Pseudo Whisper', fontsize=12, fontweight='bold')
+    
     # Pseudo (nonpara30w)を描画
-    plt.figure(figsize=(4, 3))
     librosa.display.specshow(
-        pseudo_mel[:, 30:210], x_axis='time', y_axis='mel',
-        sr=22050, hop_length=config.hop_length)
-    plt.ylabel('Mel Frequency (Hz)')
-    plt.xlabel('Time (s)')
-    plt.title('Pseudo (using vits)', fontsize=14, fontweight='bold')
-    plt.colorbar(format='%+2.0f dB')
-    plt.tight_layout()
-    plt.show()
+        pseudo_mel, x_axis='time', y_axis='mel',
+        sr=22050, hop_length=config.hop_length, ax=axes[1])
+    axes[1].set_ylabel('Mel Frequency (Hz)')
+    axes[1].set_xlabel('Time (s)')
+    axes[1].set_title('Pseudo Whisper using VITS', fontsize=12, fontweight='bold')
 
     # Whisper (whisper10)を描画
-    plt.figure(figsize=(4, 3))
-    librosa.display.specshow(
-        whisper_mel[:, 30:210], x_axis='time', y_axis='mel',
-        sr=22050, hop_length=config.hop_length)
-    plt.ylabel('Mel Frequency (Hz)')
-    plt.xlabel('Time (s)')
-    plt.title('Whisper (whisper10)', fontsize=14, fontweight='bold')
-    plt.colorbar(format='%+2.0f dB')
-    plt.tight_layout()
-    plt.show()
+    img = librosa.display.specshow(
+        whisper_mel, x_axis='time', y_axis='mel',
+        sr=22050, hop_length=config.hop_length, ax=axes[2])
+    axes[2].set_ylabel('Mel Frequency (Hz)')
+    axes[2].set_xlabel('Time (s)')
+    axes[2].set_title('Whisper', fontsize=12, fontweight='bold')
 
-    return voice_mel, pseudo_mel, whisper_mel
+    fig.colorbar(img, ax=axes, format='%+2.0f dB')
+    plt.suptitle(f'Comparison: {voice_path.name}', fontsize=16)
+    
+    # 保存
+    plt.savefig(output_path)
+    plt.close(fig) # Close to free memory
 
 
 # メルスペクトログラムを描画
 if __name__ == "__main__":
-    voice_mel, pseudo_mel, whisper_mel = plot_mel_spectrograms(
-        voice_path, pseudo_path, whisper_path
-    )
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    common_files = get_common_files()
+    print(f"Found {len(common_files)} common files.")
+    
+    for f in tqdm(common_files):
+        voice_p = VOICE_BASE / f
+        pseudo_p = PSEUDO_BASE / f
+        whisper_p = WHISPER_BASE / f
+        
+        # Output filename: jvs001_BASIC5000_0235.png (example)
+        # Avoid slashes in filename
+        safe_name = str(f).replace(os.sep, '_').replace('.wav', '.png')
+        output_p = RESULTS_DIR / safe_name
+        
+        try:
+            plot_mel_spectrograms(voice_p, pseudo_p, whisper_p, output_p)
+        except Exception as e:
+            print(f"Error processing {f}: {e}")
+            
+    print(f"Done! Results saved to {RESULTS_DIR.resolve()}")
