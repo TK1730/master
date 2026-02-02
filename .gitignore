@@ -23,4 +23,5 @@ events*
 *.safetensors
 *.yaml
 *.pyx
+*.wav
 core*

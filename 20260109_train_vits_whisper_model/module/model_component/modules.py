@@ -133,7 +133,6 @@ class WN(torch.nn.Module):
         """
         # スキップ接続の累積用出力を初期化
         output = torch.zeros_like(x)
-        n_channels_tensor = torch.IntTensor([self.hidden_channels])
 
         # 条件付け入力の前処理
         if g is not None:
@@ -152,7 +151,7 @@ class WN(torch.nn.Module):
 
             # Gated Activation: tanh(x_in + g) * sigmoid(x_in + g)
             acts = fused_add_tanh_sigmoid_multiply(
-                x_in, g_l, n_channels_tensor
+                x_in, g_l, [self.hidden_channels]
             )
             acts = self.drop(acts)
 

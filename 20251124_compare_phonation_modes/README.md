@@ -108,3 +108,29 @@ python 20251124_compare_phonation_modes/scripts/analyze_features.py `
     --output_csv 20251124_compare_phonation_modes/results/metrics_topline.csv `
     --sr 22050
 ```
+
+## 7. 実験結果
+
+### 定量評価 (Quantitative Evaluation)
+
+各データセットと正解データ（whisper10）との比較結果を以下に示す。  
+評価指標は **MCD (Mel Cepstral Distortion)** と **Mel-MSE (Mean Squared Error)** を使用し、DTWでアライメントを取った上で計算している。
+
+| データセット | MCD [dB] (↓) | Mel-MSE (↓) |
+| :--- | :---: | :---: |
+| **whisper10_topline** | 5.95 ± 0.11 | 0.38 ± 0.03 |
+| **nonpara30w_ver2** | 11.76 ± 0.65 | 1.81 ± 0.42 |
+| **nonpara30w_ver1** | 18.70 ± 1.97 | 4.90 ± 1.44 |
+
+> [!NOTE]
+> - **whisper10_topline**: PyWORLDによる分析・再合成のみを行った音声。ボコーダ由来の誤差の下限値を示す。
+> - **nonpara30w_ver2**: ver1よりもささやき声に近い音響特性を持つ。
+> - **nonpara30w_ver1**: 最も誤差が大きく、ささやき声との乖離が大きい。
+
+### 考察
+
+1. **Toplineとの比較**: whisper10_toplineはMCD 5.95dBで、これはPyWORLDボコーダ自体の再合成誤差を表す。疑似ささやき声の品質上限の目安となる。
+
+2. **Ver2 vs Ver1**: nonpara30w_ver2はver1と比較して、MCD/MSEともに約50%低い値を示しており、院時代の手法が大幅に改善されていることが確認できる。
+
+3. **課題**: ver2でもtoplineの約2倍のMCDを示しており、更なる品質向上の余地がある。

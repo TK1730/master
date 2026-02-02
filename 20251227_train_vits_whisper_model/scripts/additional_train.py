@@ -39,7 +39,7 @@ from module.vits_generator import VitsGenerator
 
 def main():
     load_iteration = "iteration50000"
-    run(load_iteration=load_iteration, load_chekpoint=True)
+    run(load_iteration=load_iteration, load_chekpoint=False)
 
 
 def dynamic_range_compression(x, C=1, clip_val=1e-5):

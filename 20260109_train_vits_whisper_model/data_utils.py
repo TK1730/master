@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 import sys
@@ -14,9 +15,11 @@ from utils.task import load_wav_to_torch, load_filepaths_and_text
 from utils.hyper_parameters import HyperParametersData
 from nlp import cleaned_text_to_sequence
 
+# matplotlibのDEBUGログを抑制
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
 
 config = get_config()
-"""Multi speaker version"""
 
 
 class TextAudioSpeakerLoader(torch.utils.data.Dataset):
@@ -196,8 +199,12 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
                 f"{self.sampling_rate} SR"
             )
 
-        # 波形の正規化（最大値で除算）
-        audio_norm = audio / self.max_wav_value
+        # 波形の正規化（-1.0 〜 1.0 の範囲にスケーリング）
+        max_abs = torch.max(torch.abs(audio))
+        if max_abs > 0:
+            audio_norm = audio / max_abs
+        else:
+            audio_norm = audio
 
         # スペクトログラムのキャッシュファイル名を生成
         spec_filename = filename.replace(".wav", ".spec.pt")
@@ -230,11 +237,10 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
                 spec = wav_to_spec(
                     audio,
                     n_fft=self.filter_length,
-                    sampling_rate=self.sampling_rate,
+                    sample_rate=self.sampling_rate,
                     hop_length=self.hop_length,
                     win_length=self.win_length,
                     center=False,
-                    norm=True,
                 )
             # バッチ次元を削除
             spec = torch.squeeze(spec, 0)
@@ -454,3 +460,70 @@ def intersperse(lst: list[Any], item: Any) -> list[Any]:
     result = [item] * (len(lst) * 2 + 1)
     result[1::2] = lst
     return result
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    from utils.hyper_parameters import HyperParameters
+
+    # 1. ハイパーパラメータのロード
+    # 実行ディレクトリからの相対パス
+    config_path = "configs/config.json"
+    hps = HyperParameters.load_from_json(config_path)
+
+    # 2. データセットの初期化
+    # 検証用データセットを使用
+    dataset = TextAudioSpeakerLoader(hps.data.validation_files, hps.data)
+
+    # 3. データの取得
+    index = 0
+    # get_audio_text_speaker_pair が内部で呼ばれる
+    phones, spec, wav, sid, tone, language = dataset[index]
+
+    logger.info(f"Loaded sample at index {index}")
+    logger.info(f"Wav shape: {wav.shape}")
+    logger.info(f"Spec shape: {spec.shape}")
+
+    # 4. wav_to_mel を使用してメルスペクトログラムを計算
+    # wav はすでに 正規化されている (1, T)
+    mel = wav_to_mel(
+        wav,
+        n_fft=hps.data.filter_length,
+        num_mels=hps.data.n_mel_channels,
+        sampling_rate=hps.data.sampling_rate,
+        hop_size=hps.data.hop_length,
+        win_size=hps.data.win_length,
+        fmin=hps.data.mel_fmin,
+        fmax=hps.data.mel_fmax,
+        center=False,
+        norm=True,
+    )
+
+    logger.info(f"Mel : max={mel.max()}, min={mel.min()}")
+
+    # 5. 描画と保存
+    mel_np = mel.squeeze(0).cpu().numpy()
+    mel_np = (mel_np - mel_np.min()) / (mel_np.max() - mel_np.min())
+    import librosa.display
+
+    plt.figure(figsize=(10, 4))
+    librosa.display.specshow(
+        mel_np,
+        sr=hps.data.sampling_rate,
+        hop_length=hps.data.hop_length,
+        x_axis="time",
+        y_axis="mel",
+        fmin=hps.data.mel_fmin,
+        fmax=hps.data.mel_fmax,
+        cmap="magma",
+        vmin=mel_np.min(),
+        vmax=mel_np.max()
+    )
+    plt.colorbar(format="%.2f dB")
+    plt.title(f"Mel Spectrogram (index: {index})")
+    plt.tight_layout()
+
+    save_path = "dataset_mel_test.png"
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    logger.info(f"Saved mel spectrogram to {save_path}")

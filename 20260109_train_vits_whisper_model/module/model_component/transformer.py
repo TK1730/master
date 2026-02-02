@@ -326,7 +326,7 @@ class FFT(nn.Module):
                 # FiLM変換: x = tanh(scale1 * x) * sigmoid(scale2 * x)
                 # scale1とscale2はg_lから計算される
                 x = fused_add_tanh_sigmoid_multiply(
-                    x, g_l, torch.IntTensor([self.hidden_channels])
+                    x, g_l, [self.hidden_channels]
                 )
 
             # Self-Attention

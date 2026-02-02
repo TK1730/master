@@ -67,7 +67,10 @@ def unset_user_dict() -> None:
         # without worker
         import pyopenjtalk
 
-        pyopenjtalk.unset_user_dict()
+        if hasattr(pyopenjtalk, "unset_user_dict"):
+            pyopenjtalk.unset_user_dict()
+        else:
+            logger.warning("pyopenjtalk.unset_user_dict is not available")
 
 
 # initialize module when imported

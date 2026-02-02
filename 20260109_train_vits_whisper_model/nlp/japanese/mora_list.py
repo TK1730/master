@@ -222,39 +222,65 @@ __MORA_LIST_ADDITIONAL: list[tuple[str, Optional[str], str]] = [
     # Common combinations using small vowels often appear in loanwords
     # Add explicit mora entries so the MORA regex can match them as
     # single mora units instead of splitting into separate kana.
-    ("クォ", "kw", "o"),
-    ("グォ", "gw", "o"),
-    ("クィ", "kw", "i"),
-    ("グィ", "gw", "i"),
-    ("クェ", "kw", "e"),
-    ("グェ", "gw", "e"),
-    ("クァ", "kw", "a"),
-    ("グァ", "gw", "a"),
+    ("クォ", "k", "w", "o"),
+    ("グォ", "g", "w", "o"),
+    ("クィ", "k", "w", "i"),
+    ("グィ", "g", "w", "i"),
+    ("クェ", "k", "w", "e"),
+    ("グェ", "g", "w", "e"),
+    ("クァ", "k", "w", "a"),
+    ("グァ", "g", "w", "a"),
     ("トゥ", "t", "u"),
     ("ドゥ", "d", "u"),
+    ("フョ", "f", "y", "o"),
+    ("フュ", "f", "y", "u"),
+    ("フャ", "f", "y", "a"),
 ]
 
 # モーラの音素表記とカタカナの対応表
 # 例: "vo" -> "ヴォ", "a" -> "ア"
-MORA_PHONEMES_TO_MORA_KATA: dict[str, str] = {
-    (consonant or "") + vowel: kana for [kana, consonant, vowel] in __MORA_LIST_MINIMUM
-}
+# 3要素タプル (kana, consonant, vowel) と
+# 4要素タプル (kana, consonant1, consonant2, vowel) の両方に対応
+MORA_PHONEMES_TO_MORA_KATA: dict[str, str] = {}
+for item in __MORA_LIST_MINIMUM:
+    if len(item) == 3:
+        kana, consonant, vowel = item
+        key = (consonant or "") + vowel
+    elif len(item) == 4:
+        kana, consonant1, consonant2, vowel = item
+        key = consonant1 + consonant2 + vowel
+    else:
+        continue
+    MORA_PHONEMES_TO_MORA_KATA[key] = kana
 
 # モーラのカタカナ表記と音素の対応表
 # 例: "ヴォ" -> ("v", "o"), "ア" -> (None, "a")
-MORA_KATA_TO_MORA_PHONEMES: dict[str, tuple[Optional[str], str]] = {
-    kana: (consonant, vowel)
-    for [kana, consonant, vowel] in (__MORA_LIST_MINIMUM + __MORA_LIST_ADDITIONAL)
-}
+# 4要素の場合は ("k", "w", "o") のようにタプルで返す
+MORA_KATA_TO_MORA_PHONEMES: dict[str, tuple] = {}
+for item in (__MORA_LIST_MINIMUM + __MORA_LIST_ADDITIONAL):
+    if len(item) == 3:
+        kana, consonant, vowel = item
+        MORA_KATA_TO_MORA_PHONEMES[kana] = (consonant, vowel)
+    elif len(item) == 4:
+        kana, consonant1, consonant2, vowel = item
+        MORA_KATA_TO_MORA_PHONEMES[kana] = (consonant1, consonant2, vowel)
+    else:
+        continue
 
 # 子音の集合
-CONSONANTS = set(
-    [
-        consonant
-        for consonant, _ in MORA_KATA_TO_MORA_PHONEMES.values()
-        if consonant is not None
-    ]
-)
+# 3要素タプル (consonant, vowel) と 4要素タプル (consonant1, consonant2, vowel) の両方に対応
+CONSONANTS = set()
+for phonemes in MORA_KATA_TO_MORA_PHONEMES.values():
+    if len(phonemes) == 2:
+        consonant, _ = phonemes
+        if consonant is not None:
+            CONSONANTS.add(consonant)
+    elif len(phonemes) == 3:
+        consonant1, consonant2, _ = phonemes
+        if consonant1 is not None:
+            CONSONANTS.add(consonant1)
+        if consonant2 is not None:
+            CONSONANTS.add(consonant2)
 
 # 母音の集合 (便宜上「ん」を含める)
 VOWELS = {"a", "i", "u", "e", "o", "N"}

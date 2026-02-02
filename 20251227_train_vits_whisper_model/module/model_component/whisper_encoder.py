@@ -94,20 +94,24 @@ class WhisperEncoder(nn.Module):
         if weight_path is not None:
             self.load_weights(weight_path)
 
-        # MultiHeadAttention層
-        self.attention = MultiHeadAttention(
-            channels=self.model.config.d_model,
-            out_channels=self.model.config.d_model,
-            n_heads=8,
-            p_dropout=0.1
-        ).to(device)
-
-        # 線形補間
-        self.projection = nn.Conv1d(
+        self.preprocess = nn.Conv1d(
             self.model.config.d_model,
-            self.out_channels * 2,
+            self.out_channels,
             1
-        ).to(device)
+        )
+        
+        # resblock
+        self.resblock = ResNetBlock(
+            channels=self.out_channels,
+            kernel_size=3,
+        )
+
+        self.projection = nn.Conv1d(
+            self.out_channels,
+            self.out_channels*2,
+            1
+        )
+
 
     def load_weights(self, weight_path: str) -> None:
         """
@@ -169,14 +173,14 @@ class WhisperEncoder(nn.Module):
                 align_corners=False
             )
 
-        # MultiHeadAttention適用 (self-attention)
-        output = self.attention(output, output, text_mask)
-
         # 線形変換
-        output = self.projection(output * text_mask)
+        output = self.preprocess(output * text_mask)
+
+        # Resblock
+        output = self.resblock(output, text_mask)
 
         # maskを適用
-        output = output * text_mask
+        output = self.projection(output * text_mask)
 
         m, logs = output.split(self.out_channels, dim=1)
 

@@ -84,7 +84,11 @@ def calculate_mcd_with_dtw(ref_wav, gen_wav, sr, n_mcep=24):
 
 
 def calculate_mel_mse_with_dtw(ref_wav, gen_wav, sr):
-    """DTWを用いてアライメントを取り、メルスペクトログラムのMSEを計算する"""
+    """DTWを用いてアライメントを取り、メルスペクトログラムのMSEを計算する
+
+    Returns:
+        tuple: (mean_mse, path) - MSEとアライメントパス
+    """
     # 1. 特徴量抽出 (Log Mel Spectrogram)
     ref_mel = compute_log_mel(ref_wav, sr)
     gen_mel = compute_log_mel(gen_wav, sr)
@@ -100,7 +104,170 @@ def calculate_mel_mse_with_dtw(ref_wav, gen_wav, sr):
 
     mean_mse = sq_err_sum / len(path)
 
-    return mean_mse
+    return mean_mse, path
+
+
+def extract_world_features(wav, sr, hop_length=None):
+    """PyWorldを使ってF0, SP, APを抽出する
+
+    Args:
+        wav: 音声波形データ
+        sr: サンプリングレート
+        hop_length: ホップ長（サンプル数）。Noneの場合はデフォルト値を使用
+
+    Returns:
+        tuple: (f0, sp, ap) - 基本周波数、スペクトル包絡、非周期性指標
+    """
+    wav = wav.astype(np.float64)
+
+    # hop_lengthからframe_period (ms) を計算
+    # メルスペクトログラムと同じフレーム周期にする
+    if hop_length is None:
+        hop_length = config.hop_length
+    frame_period = (hop_length / sr) * 1000.0
+
+    f0, t = pw.dio(wav, sr, frame_period=frame_period)
+    f0 = pw.stonemask(wav, f0, t, sr)
+    sp = pw.cheaptrick(wav, f0, t, sr)
+    ap = pw.d4c(wav, f0, t, sr)
+
+    return f0, sp, ap
+
+
+def calculate_f0_mse_with_alignment(ref_f0, gen_f0, path):
+    """アライメントパスを使ってF0のMSEを計算する
+
+    Args:
+        ref_f0: リファレンス音声のF0
+        gen_f0: 生成音声のF0
+        path: DTWアライメントパス
+
+    Returns:
+        float: F0のMSE (有声区間のみ)
+    """
+    sq_err_sum = 0.0
+    valid_count = 0
+
+    for i, j in path:
+        # インデックスチェック
+        if i >= len(ref_f0) or j >= len(gen_f0):
+            continue
+
+        # 有声区間のみ計算 (F0 > 0)
+        if ref_f0[i] > 0 and gen_f0[j] > 0:
+            sq_err_sum += (ref_f0[i] - gen_f0[j]) ** 2
+            valid_count += 1
+
+    if valid_count == 0:
+        return 0.0
+
+    return sq_err_sum / valid_count
+
+
+def calculate_log_f0_rmse_with_alignment(ref_f0, gen_f0, path):
+    """アライメントパスを使ってログスケールF0のRMSEを計算する
+
+    Args:
+        ref_f0: リファレンス音声のF0
+        gen_f0: 生成音声のF0
+        path: DTWアライメントパス
+
+    Returns:
+        float: ログF0のRMSE (有声区間のみ)
+    """
+    sq_err_sum = 0.0
+    valid_count = 0
+
+    for i, j in path:
+        # インデックスチェック
+        if i >= len(ref_f0) or j >= len(gen_f0):
+            continue
+
+        # 有声区間のみ計算 (F0 > 0)
+        if ref_f0[i] > 0 and gen_f0[j] > 0:
+            log_ref = np.log(ref_f0[i])
+            log_gen = np.log(gen_f0[j])
+            sq_err_sum += (log_ref - log_gen) ** 2
+            valid_count += 1
+
+    if valid_count == 0:
+        return 0.0
+
+    return np.sqrt(sq_err_sum / valid_count)
+
+
+def calculate_sp_mse_with_alignment(ref_sp, gen_sp, path):
+    """アライメントパスを使ってスペクトル包絡(SP)のMSEを計算する
+
+    Args:
+        ref_sp: リファレンス音声のスペクトル包絡
+        gen_sp: 生成音声のスペクトル包絡
+        path: DTWアライメントパス
+
+    Returns:
+        float: SPのMSE
+    """
+    sq_err_sum = 0.0
+    valid_count = 0
+
+    for i, j in path:
+        # インデックスチェック
+        if i >= len(ref_sp) or j >= len(gen_sp):
+            continue
+
+        # NaNやInfをスキップ（念のため）
+        if not (np.isfinite(ref_sp[i]).all() and np.isfinite(gen_sp[j]).all()):
+            continue
+
+        diff = ref_sp[i] - gen_sp[j]
+        sq_err = np.mean(diff ** 2)
+
+        # 計算結果もチェック
+        if np.isfinite(sq_err):
+            sq_err_sum += sq_err
+            valid_count += 1
+
+    if valid_count == 0:
+        return 0.0
+
+    return sq_err_sum / valid_count
+
+
+def calculate_ap_mse_with_alignment(ref_ap, gen_ap, path):
+    """アライメントパスを使って非周期性指標(AP)のMSEを計算する
+
+    Args:
+        ref_ap: リファレンス音声の非周期性指標
+        gen_ap: 生成音声の非周期性指標
+        path: DTWアライメントパス
+
+    Returns:
+        float: APのMSE
+    """
+    sq_err_sum = 0.0
+    valid_count = 0
+
+    for i, j in path:
+        # インデックスチェック
+        if i >= len(ref_ap) or j >= len(gen_ap):
+            continue
+
+        # NaNやInfをスキップ（PyWorldのd4cは数値的に不安定な場合がある）
+        if not (np.isfinite(ref_ap[i]).all() and np.isfinite(gen_ap[j]).all()):
+            continue
+
+        diff = ref_ap[i] - gen_ap[j]
+        sq_err = np.mean(diff ** 2)
+
+        # 計算結果もチェック
+        if np.isfinite(sq_err):
+            sq_err_sum += sq_err
+            valid_count += 1
+
+    if valid_count == 0:
+        return 0.0
+
+    return sq_err_sum / valid_count
 
 
 def main(args):
@@ -113,10 +280,13 @@ def main(args):
 
     print(f"Processing {len(gen_files)} files...")
 
-    # CSVヘッダー書き込み
+    # CSVヘッダー書き込み (F0, SP, APのMSEを追加)
     with open(output_csv, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(['filename', 'MCD_dB', 'Mel_MSE'])
+        writer.writerow([
+            'filename', 'MCD_dB', 'Mel_MSE',
+            'F0_MSE', 'LogF0_RMSE', 'SP_MSE', 'AP_MSE'
+        ])
 
         for gen_path in tqdm(gen_files):
             # 相対パスを使って対応する正解ファイルを探す
@@ -138,12 +308,47 @@ def main(args):
                 ref_wav, _ = librosa.load(ref_path, sr=args.sr)
                 gen_wav, _ = librosa.load(gen_path, sr=args.sr)
 
-                # 指標計算
+                # MCD計算
                 mcd = calculate_mcd_with_dtw(ref_wav, gen_wav, args.sr)
-                mse = calculate_mel_mse_with_dtw(ref_wav, gen_wav, args.sr)
+
+                # Mel MSE計算 (アライメントパスも取得)
+                mel_mse, alignment_path = calculate_mel_mse_with_dtw(
+                    ref_wav, gen_wav, args.sr
+                )
+
+                # WORLD特徴量抽出（メルスペクトログラムと同じフレーム周期）
+                ref_f0, ref_sp, ref_ap = extract_world_features(
+                    ref_wav, args.sr, hop_length=config.hop_length
+                )
+                gen_f0, gen_sp, gen_ap = extract_world_features(
+                    gen_wav, args.sr, hop_length=config.hop_length
+                )
+
+                # メルスペクトログラムのアライメントを使って
+                # F0, SP, APのMSEを計算
+                f0_mse = calculate_f0_mse_with_alignment(
+                    ref_f0, gen_f0, alignment_path
+                )
+                log_f0_mse = calculate_log_f0_rmse_with_alignment(
+                    ref_f0, gen_f0, alignment_path
+                )
+                sp_mse = calculate_sp_mse_with_alignment(
+                    ref_sp, gen_sp, alignment_path
+                )
+                ap_mse = calculate_ap_mse_with_alignment(
+                    ref_ap, gen_ap, alignment_path
+                )
 
                 # CSVに書き込み
-                writer.writerow([gen_path.name, f"{mcd:.4f}", f"{mse:.4f}"])
+                writer.writerow([
+                    gen_path.name,
+                    f"{mcd:.4f}",
+                    f"{mel_mse:.4f}",
+                    f"{f0_mse:.4f}",
+                    f"{log_f0_mse:.4f}",
+                    f"{sp_mse:.4f}",
+                    f"{ap_mse:.4f}"
+                ])
 
             except Exception as e:
                 print(f"Error processing {gen_path.name}: {e}")
@@ -175,7 +380,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sr",
         type=int,
-        default=24000,
+        default=22050,
         help="Sampling rate"
     )
 

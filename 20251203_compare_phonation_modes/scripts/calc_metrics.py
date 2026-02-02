@@ -10,8 +10,8 @@ import sys
 # utilsがルートディレクトリにあるため、パスを追加
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
-from utils import functions
-from utils import config
+import functions
+import config
 
 def compute_mcep(wav, sr, n_mcep=24, frame_period=5.0):
     """

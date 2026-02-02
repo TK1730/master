@@ -1,5 +1,6 @@
 # Punctuations
-PUNCTUATIONS = ["!", "?", "…", ",", ".", "'", "-"]
+# 注意: "!" と "?" は pyopenjtalk で処理できないため除外されています
+PUNCTUATIONS = ["…", ",", ".", "'", "-"]
 
 # Punctuations and special tokens
 PUNCTUATION_SYMBOLS = PUNCTUATIONS + ["SP", "UNK"]

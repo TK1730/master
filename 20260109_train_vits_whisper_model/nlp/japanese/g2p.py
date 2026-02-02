@@ -38,6 +38,10 @@ def g2p(
 
     # punctuation がすべて消えた、音素とアクセントのタプルのリスト（「ん」は「N」）
     phone_tone_list_wo_punct = __g2phone_tone_wo_punct(norm_text)
+    
+    # pyopenjtalk が返す2文字の子音（kw, gw など）を個別の子音に分割
+    # 例: [('k', 'w', 0)] -> [('k', 0), ('w', 0)]
+    phone_tone_list_wo_punct = __split_two_char_consonants(phone_tone_list_wo_punct)
 
     # sep_text: 単語単位の単語のリスト
     # sep_kata: 単語単位の単語のカタカナ読みのリスト
@@ -139,16 +143,11 @@ def text_to_sep_kata(
             # word は正規化されているので、`.`, `,`, `!`, `'`, `-`, `--` のいずれか
             if not set(word).issubset(set(PUNCTUATIONS)):  # 記号繰り返しか判定
                 # ここは pyopenjtalk が読めない文字等のときに起こる
-                # ##例外を送出する場合
-                if raise_yomi_error:
-                    raise YomiError(f"Cannot read: {word} in:\n{norm_text}")
-                # ## 例外を送出しない場合
-                # ## 読めない文字は「'」として扱う
+                # 読めない文字がある場合は常に例外を送出してその行をスキップする
                 logger.warning(
-                    f'Cannot read: {word} in:\n{norm_text}, replaced with "\'"'
+                    f'Cannot read: {word} in:\n{norm_text}, skipping this line'
                 )
-                # word の文字数分「'」を追加
-                yomi = "'" * len(word)
+                raise YomiError(f"Cannot read: {word} in:\n{norm_text}")
             else:
                 # yomi は元の記号のままに変更
                 yomi = word
@@ -574,6 +573,35 @@ def __fix_phone_tone(phone_tone_list: list[tuple[str, int]]) -> list[tuple[str, 
         raise ValueError(f"Unexpected tone values: {tone_values}")
 
 
+def __split_two_char_consonants(
+    phone_tone_list: list[tuple[str, int]]
+) -> list[tuple[str, int]]:
+    """
+    pyopenjtalk が返す2文字の子音（kw, gw など）を個別の子音に分割する。
+    例: [('kw', 0), ('a', 0)] -> [('k', 0), ('w', 0), ('a', 0)]
+    
+    Args:
+        phone_tone_list (list[tuple[str, int]]): 音素とアクセントのペアのリスト
+    
+    Returns:
+        list[tuple[str, int]]: 分割された音素とアクセントのペアのリスト
+    """
+    # 分割対象の2文字子音のリスト
+    two_char_consonants = {'kw', 'gw', 'fy'}
+    
+    result: list[tuple[str, int]] = []
+    for phone, tone in phone_tone_list:
+        if phone in two_char_consonants:
+            # 2文字の子音を個別の子音に分割
+            # 例: ('kw', 0) -> [('k', 0), ('w', 0)]
+            result.append((phone[0], tone))
+            result.append((phone[1], tone))
+        else:
+            result.append((phone, tone))
+    
+    return result
+
+
 def __handle_long(sep_phonemes: list[list[str]]) -> list[list[str]]:
     """
     フレーズごとに分かれた音素（長音記号がそのまま）のリストのリスト `sep_phonemes` を受け取り、
@@ -649,10 +677,19 @@ def __kata_to_phoneme_list(text: str) -> list[str]:
         raise ValueError(f"Input must be katakana only: {text}")
 
     def mora2phonemes(mora: str) -> str:
-        consonant, vowel = MORA_KATA_TO_MORA_PHONEMES[mora]
-        if consonant is None:
-            return f" {vowel}"
-        return f" {consonant} {vowel}"
+        phonemes = MORA_KATA_TO_MORA_PHONEMES[mora]
+        if len(phonemes) == 2:
+            # 3要素タプルの場合: (consonant, vowel)
+            consonant, vowel = phonemes
+            if consonant is None:
+                return f" {vowel}"
+            return f" {consonant} {vowel}"
+        elif len(phonemes) == 3:
+            # 4要素タプルの場合: (consonant1, consonant2, vowel)
+            consonant1, consonant2, vowel = phonemes
+            return f" {consonant1} {consonant2} {vowel}"
+        else:
+            raise ValueError(f"Unexpected phoneme tuple length: {len(phonemes)} for mora: {mora}")
 
     def _mora_sub(match: re.Match) -> str:
         return mora2phonemes(match.group())

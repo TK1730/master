@@ -1,5 +1,3 @@
-from distutils import config
-import json
 from pathlib import Path
 from typing import Optional, Union
 
@@ -38,7 +36,8 @@ class HyperParametersData(BaseModel):
     hop_length: int = 256
     win_length: int = 1024
     use_mel: bool = False
-    n_mel_channels: int = 80
+    spec_channels: int = 80
+    n_mel_channels: int = 80  # spec_channelsのエイリアス（互換性のため）
     mel_fmin: float = 0.0
     mel_fmax: Optional[float] = None
     add_blank: bool = True
@@ -53,21 +52,54 @@ class HyperParametersModel(BaseModel):
     use_noise_scaled_mas: bool = True
     use_duration_discriminator: bool = False
     inter_channels: int = 192
-    hidden_channels: int = 192
-    filter_channels: int = 768
-    n_heads: int = 2
-    n_layers: int = 6
-    kernel_size: int = 3
-    p_dropout: float = 0.1
-    resblock: str = "1"
-    resblock_kernel_sizes: list[int] = [3, 7, 11]
-    resblock_dilation_sizes: list[list[int]] = [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
-    upsample_rates: list[int] = [8, 8, 2, 2]
-    upsample_initial_channel: int = 512
-    upsample_kernel_sizes: list = [16, 16, 4, 4]
-    n_layers_q: int = 3
-    use_spectral_norm: bool = False  # GANの識別器で使用
     gin_channels: int = 256
+
+    # TextEncoder用パラメータ
+    text_enc_hidden_channels: int = 192
+    text_enc_filter_channels: int = 768
+    text_enc_n_heads: int = 2
+    text_enc_n_layers: int = 6
+    text_enc_kernel_size: int = 3
+    text_enc_p_dropout: float = 0.1
+
+    # PosteriorEncoder用パラメータ
+    post_enc_n_layers: int = 16
+    post_enc_kernel_size: int = 5
+    post_enc_dilation_rate: int = 1
+
+    # Decoder (Generator)用パラメータ
+    decoder_resblock_type: str = "1"
+    decoder_resblock_kernel_sizes: list[int] = [3, 7, 11]
+    decoder_resblock_dilation_sizes: list[list[int]] = [
+        [1, 3, 5], [1, 3, 5], [1, 3, 5]
+    ]
+    decoder_upsample_rates: list[int] = [8, 8, 2, 2]
+    decoder_upsample_initial_channel: int = 512
+    decoder_upsample_kernel_sizes: list[int] = [16, 16, 4, 4]
+
+    # Flow用パラメータ
+    flow_n_layers: int = 4
+    flow_transformer_n_layers: int = 6
+    flow_share_parameter: bool = False
+    flow_kernel_size: int = 5
+    use_transformer_flow: bool = False
+
+    # DurationPredictor用パラメータ (StochasticDurationPredictor)
+    sdp_filter_channels: int = 192
+    sdp_kernel_size: int = 3
+    sdp_p_dropout: float = 0.5
+    sdp_n_flows: int = 4
+
+    # DurationPredictor用パラメータ (通常のDurationPredictor)
+    dp_filter_channels: int = 256
+    dp_kernel_size: int = 3
+    dp_p_dropout: float = 0.5
+
+    # その他の設定
+    use_sdp: bool = True
+    mas_noise_scale_initial: float = 0.01
+    noise_scale_delta: float = 2e-6
+    use_spectral_norm: bool = False  # GANの識別器で使用
 
 
 class HyperParameters(BaseModel):

@@ -45,7 +45,7 @@ class Vits2Generator(nn.Module):
         n_vocab: int,
         spec_channels: int,
         segment_size: int,
-        latent_channels: int,  # 旧: inter_channels
+        inter_channels: int,
         n_speakers: int = 0,
         gin_channels: int = 0,
         # TextEncoder用パラメータ
@@ -94,7 +94,7 @@ class Vits2Generator(nn.Module):
                 n_vocab (int): 音素の種類数
                 spec_channels (int): スペクトログラムのチャンネル数
                 segment_size (int): セグメントサイズ(音声の長さ)
-                latent_channels (int): 潜在空間のチャンネル数(旧: inter_channels)
+                inter_channels (int): 潜在空間のチャンネル数(旧: latent_channels)
                 n_speakers (int): スピーカーの数. Defaults to 0.
                 gin_channels (int): 話者埋め込みのチャンネル数. Defaults to 0.
 
@@ -116,7 +116,7 @@ class Vits2Generator(nn.Module):
                 decoder_resblock_kernel_sizes (list[int]): 残差ブロックの
                     カーネルサイズリスト
                 decoder_resblock_dilation_sizes (list[list[int]]): 残差
-                    ブロチE��のdilationサイズリスト
+                    ブロックのdilationサイズリスト
                 decoder_upsample_rates (list[int]): アップサンプリング率
                 decoder_upsample_initial_channel (int): アップサンプリング
                     初期チャンネル数
@@ -144,7 +144,7 @@ class Vits2Generator(nn.Module):
             その他の設定:
                 use_sdp (bool): Stochastic Duration Predictorを使用するか
                 use_spk_conditoned_encoder (bool): 話者条件付きエンコーダを
-                    使用するぁE
+                    使用するか
                 use_noise_scaled_mas (bool): noise_scaled MASを使用するか
                 mas_noise_scale_initial (float): noise_scaled MASの初期値
                 noise_scale_delta (float): noise_scaled MASの減衰量
@@ -154,7 +154,7 @@ class Vits2Generator(nn.Module):
         self.n_vocab = n_vocab
         self.spec_channels = spec_channels
         self.segment_size = segment_size
-        self.latent_channels = latent_channels
+        self.inter_channels = inter_channels
         self.n_speakers = n_speakers
         self.gin_channels = gin_channels
 
@@ -177,6 +177,7 @@ class Vits2Generator(nn.Module):
         if use_spk_conditoned_encoder and gin_channels > 0:
             self.enc_gin_channels = gin_channels
         else:
+            # 話者条件付きが無効な場合は0を設定（Noneだとnn.Linearでエラーになる）
             self.enc_gin_channels = 0
 
         # デフォルト値を設定 (Noneの場合)
@@ -192,7 +193,7 @@ class Vits2Generator(nn.Module):
         # テキストエンコーダ: 音素列を潜在表現に変換
         self.enc_p = TextEncoder(
             n_vocab=n_vocab,
-            out_channels=latent_channels,
+            out_channels=inter_channels,
             hidden_channels=text_enc_hidden_channels,
             filter_channels=text_enc_filter_channels,
             n_heads=text_enc_n_heads,
@@ -205,7 +206,7 @@ class Vits2Generator(nn.Module):
         # 音声エンコーダ: 線形スペクトログラムと話者埋め込みをencode
         self.enc_q = PosteriorEncoder(
             in_channels=spec_channels,
-            out_channels=latent_channels,
+            out_channels=inter_channels,
             hidden_channels=text_enc_hidden_channels,
             kernel_size=post_enc_kernel_size,
             dilation_rate=post_enc_dilation_rate,
@@ -215,7 +216,7 @@ class Vits2Generator(nn.Module):
 
         # デコーダ: z, speaker_id_embeddingを入力に受け取り音声を生成
         self.dec = Generator(
-            initial_channel=latent_channels,
+            initial_channel=inter_channels,
             resblock_str=decoder_resblock_type,
             resblock_kernel_sizes=decoder_resblock_kernel_sizes,
             resblock_dilation_sizes=decoder_resblock_dilation_sizes,
@@ -229,7 +230,7 @@ class Vits2Generator(nn.Module):
         # で使用する変数z_pを出力するネットワーク (逆方向も可)
         if use_transformer_flow:
             self.flow = TransformerCouplingBlock(
-                channels=latent_channels,
+                channels=inter_channels,
                 hidden_channels=text_enc_hidden_channels,
                 filter_channels=text_enc_filter_channels,
                 n_heads=text_enc_n_heads,
@@ -242,7 +243,7 @@ class Vits2Generator(nn.Module):
             )
         else:
             self.flow = ResidualCouplingBlock(
-                channels=latent_channels,
+                channels=inter_channels,
                 hidden_channels=text_enc_hidden_channels,
                 kernel_size=flow_kernel_size,
                 dilation_rate=1,
@@ -270,7 +271,7 @@ class Vits2Generator(nn.Module):
         )
 
         # 話者埋め込み
-        if n_speakers > 1:
+        if n_speakers > 0:
             self.emb_g = nn.Embedding(n_speakers, gin_channels)
 
     def forward(
@@ -472,7 +473,7 @@ class Vits2Generator(nn.Module):
 
         # 持続時間予測
         # SDPとDPを混合して持続時間を予測
-        logw = self.dp(
+        logw = self.sdp(
             x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w
         ) * (
             sdp_ratio
@@ -507,9 +508,7 @@ class Vits2Generator(nn.Module):
         )
 
         # Flow: テキスト潜在空間から音声潜在空間に変換（順方向）
-        z = self.flow(
-            z_p_dur, m_p_dur, logs_p_dur, y_mask, g=g, reverse=True
-        )
+        z = self.flow(z_p_dur, y_mask, g=g, reverse=True)
 
         # デコーダで音声波形を生成
         o = self.dec((z * y_mask)[:, :, :max_len], g=g)

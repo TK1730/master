@@ -6,8 +6,18 @@ import pyworld as pw
 from pathlib import Path
 from tqdm import tqdm
 
-from utils import functions
-from utils import config
+
+# Configuration constants (inline to avoid external dependency)
+n_mels = 80
+n_fft = 1024
+hop_length = 256
+
+
+def dynamic_range_compression(
+    x: np.ndarray, clip_val: float = 1e-5
+) -> np.ndarray:
+    """Convert to log scale with clipping."""
+    return np.log(np.clip(x, clip_val, None))
 
 
 def compute_mcep(wav, sr, n_mcep=24, frame_period=5.0):
@@ -23,28 +33,28 @@ def compute_mcep(wav, sr, n_mcep=24, frame_period=5.0):
 def compute_log_mel(
     wav,
     sr,
-    n_fft=config.n_fft,
-    hop_length=config.hop_length,
-    n_mels=config.n_mels
+    fft_size=n_fft,
+    hop=hop_length,
+    mels=n_mels
 ):
     """Librosaを使って対数メルスペクトログラムを抽出する"""
     # 振幅スペクトル
-    D = librosa.stft(wav, n_fft=n_fft, hop_length=hop_length, win_length=n_fft)
+    D = librosa.stft(wav, n_fft=fft_size, hop_length=hop, win_length=fft_size)
     sp, _ = librosa.magphase(D)
 
     # メルフィルタバンク
     # ※ fmaxはサンプリングレートに合わせて調整してください (例: sr/2)
     mel_basis = librosa.filters.mel(
         sr=sr,
-        n_fft=n_fft,
-        n_mels=n_mels,
+        n_fft=fft_size,
+        n_mels=mels,
         fmin=0,
         fmax=None
     )
     mel_sp = np.dot(mel_basis, sp)
 
     # 対数変換 (dB)
-    log_mel = functions.dynamic_range_compression(mel_sp)
+    log_mel = dynamic_range_compression(mel_sp)
     return log_mel.T  # (Time, n_mels)
 
 
@@ -175,7 +185,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sr",
         type=int,
-        default=24000,
+        default=22050,
         help="Sampling rate"
     )
 

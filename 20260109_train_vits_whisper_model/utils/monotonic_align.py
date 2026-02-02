@@ -117,7 +117,7 @@ def search_path(
         # 注意: 現在はCPU版(Numba JIT)を使用
         # GPU版を使用する場合は`maximum_path_cuda`に置き換える
         attn = (
-            maximum_path_cuda(logp, attn_mask.squeeze(1))
+            maximum_path(logp, attn_mask.squeeze(1))
             .unsqueeze(1)
             .detach()  # [batch, 1, spec_len, text_len]
         )
@@ -348,10 +348,10 @@ def maximum_path_cuda(
     t_s_max_device = cuda.as_cuda_array(mask.sum(2, dtype=torch.int32)[:, 0])
 
     # スレッド構成を設定
-    # blockspergrid: バッチ数（各バッチを1ブロックで処理）
-    # threadsperblock: 最大シーケンス長に応じて調整
+    # 各バッチを1つの並列ユニット(i = cuda.grid(1))として処理
+    # 注意: 現状のカーネル実装は内部でループを回しているため、スレッド並列は不要
+    threadsperblock = 1
     blockspergrid = neg_cent.shape[0]
-    threadsperblock = max(neg_cent.shape[1], neg_cent.shape[2])
 
     # CUDAカーネルを実行
     maximum_path_cuda_jit[blockspergrid, threadsperblock](
@@ -365,94 +365,116 @@ def maximum_path_cuda(
     return path
 
 
-@cuda.jit("void(int32[:,:,:], float32[:,:,:], int32[:], int32[:])")
-def maximum_path_cuda_jit(
-    paths: Any,
-    values: Any,
-    t_ys: Any,
-    t_xs: Any,
-) -> None:
-    """
-    CUDAカーネルで最大パスを計算します。
+# CUDA 関数は CUDA が利用可能な場合のみ定義
+try:
+    @cuda.jit("void(int32[:,:,:], float32[:,:,:], int32[:], int32[:])")
+    def maximum_path_cuda_jit(
+        paths: Any,
+        values: Any,
+        t_ys: Any,
+        t_xs: Any,
+    ) -> None:
+        """
+        CUDAカーネルで最大パスを計算します。
 
-    GPU上で並列に動的計画法を実行します。各バッチが1つのブロックで
-    処理され、ブロック内のスレッドが協調して計算を行います。
+        GPU上で並列に動的計画法を実行します。各バッチが1つのブロックで
+        処理され、ブロック内のスレッドが協調して計算を行います。
 
-    CUDA実装の特徴:
-        - 各バッチを独立に並列処理
-        - ブロック内同期でスレッド間の協調を保証
-        - 共有メモリは使用せず、グローバルメモリを直接操作
+        CUDA実装の特徴:
+            - 各バッチを独立に並列処理
+            - ブロック内同期でスレッド間の協調を保証
+            - 共有メモリは使用せず、グローバルメモリを直接操作
 
-    スレッド構成:
-        - blockIdx.x: バッチインデックス (0 ~ batch_size-1)
-        - threadIdx.x: スレッドインデックス (0 ~ max(spec_len, text_len)-1)
+        スレッド構成:
+            - blockIdx.x: バッチインデックス (0 ~ batch_size-1)
+            - threadIdx.x: スレッドインデックス (0 ~ max(spec_len, text_len)-1)
 
-    制約:
-        - モノトニック: xとyの両方が単調増加
-        - x == yの位置は使用不可
+        制約:
+            - モノトニック: xとyの両方が単調増加
+            - x == yの位置は使用不可
 
-    最適化の余地:
-        - 共有メモリを使用してグローバルメモリアクセスを削減
-        - スレッドブロックサイズの動的調整
-        - ウォープレベルの最適化
+        最適化の余地:
+            - 共有メモリを使用してグローバルメモリアクセスを削減
+            - スレッドブロックサイズの動的調整
+            - ウォープレベルの最適化
 
-    Args:
-        paths (cuda.devicearray): 出力パスを格納するデバイス配列
-            Shape: [batch, spec_len, text_len]
-        values (cuda.devicearray): コスト値 (対数尤度)
-            Shape: [batch, spec_len, text_len]
-        t_ys (cuda.devicearray): 各バッチの有効なスペクトログラム長
-            Shape: [batch]
-        t_xs (cuda.devicearray): 各バッチの有効なテキスト長
-            Shape: [batch]
-    """
-    max_neg_val = -1e9  # 無効なパスに割り当てる値
+        Args:
+            paths (cuda.devicearray): 出力パスを格納するデバイス配列
+                Shape: [batch, spec_len, text_len]
+            values (cuda.devicearray): コスト値 (対数尤度)
+                Shape: [batch, spec_len, text_len]
+            t_ys (cuda.devicearray): 各バッチの有効なスペクトログラム長
+                Shape: [batch]
+            t_xs (cuda.devicearray): 各バッチの有効なテキスト長
+                Shape: [batch]
+        """
+        max_neg_val = -1e9  # 無効なパスに割り当てる値
 
-    # 現在のスレッドが処理するバッチインデックス
-    i = cuda.grid(1)
+        # 現在のスレッドが処理するバッチインデックス
+        i = cuda.grid(1)
 
-    # インデックスが範囲外の場合は終了
-    if i >= paths.shape[0]:
-        return
+        # インデックスが範囲外の場合は終了
+        if i >= paths.shape[0]:
+            return
 
-    # 現在のバッチのデータを取得
-    path = paths[i]
-    value = values[i]
-    t_y = t_ys[i]
-    t_x = t_xs[i]
+        # 現在のバッチのデータを取得
+        path = paths[i]
+        value = values[i]
+        t_y = t_ys[i]
+        t_x = t_xs[i]
 
-    v_prev = v_cur = 0.0
-    index = t_x - 1
+        v_prev = v_cur = 0.0
+        index = t_x - 1
 
-    # 前向きパス: 動的計画法で最大値を計算
-    for y in range(t_y):
-        # モノトニック制約の範囲を計算
-        for x in range(max(0, t_x + y - t_y), min(t_x, y + 1)):
-            # 前の位置からの遷移コストを計算
-            if x == y:
-                v_cur = max_neg_val  # 同じ位置は無効
-            else:
-                v_cur = value[y - 1, x]  # 上からの遷移
-
-            if x == 0:
-                if y == 0:
-                    v_prev = 0.0  # 開始位置
+        # 前向きパス: 動的計画法で最大値を計算
+        for y in range(t_y):
+            # モノトニック制約の範囲を計算
+            for x in range(max(0, t_x + y - t_y), min(t_x, y + 1)):
+                # 前の位置からの遷移コストを計算
+                if x == y:
+                    v_cur = max_neg_val  # 同じ位置は無効
                 else:
-                    v_prev = max_neg_val  # 無効
-            else:
-                v_prev = value[y - 1, x - 1]  # 左上からの遷移
+                    v_cur = value[y - 1, x]  # 上からの遷移
 
-            # 現在の位置の最大値を更新
-            value[y, x] += max(v_prev, v_cur)
+                if x == 0:
+                    if y == 0:
+                        v_prev = 0.0  # 開始位置
+                    else:
+                        v_prev = max_neg_val  # 無効
+                else:
+                    v_prev = value[y - 1, x - 1]  # 左上からの遷移
 
-    # 後ろ向きトレース: 最適パスを構築
-    for y in range(t_y - 1, -1, -1):
-        path[y, index] = 1  # この位置をパスに含める
-        # 次の位置を決定
-        if index != 0 and (
-            index == y or value[y - 1, index] < value[y - 1, index - 1]
-        ):
-            index = index - 1
+                # 現在の位置の最大値を更新
+                value[y, x] += max(v_prev, v_cur)
 
-    # スレッド同期: 全てのスレッドの処理完了を待つ
-    cuda.syncthreads()
+        # 後ろ向きトレース: 最適パスを構築
+        for y in range(t_y - 1, -1, -1):
+            path[y, index] = 1  # この位置をパスに含める
+            # 次の位置を決定
+            if index != 0 and (
+                index == y or value[y - 1, index] < value[y - 1, index - 1]
+            ):
+                index = index - 1
+
+        # スレッド同期: 全てのスレッドの処理完了を待つ
+        cuda.syncthreads()
+
+    # CUDA関数が正常に定義されたことを示すフラグ
+    _CUDA_AVAILABLE = True
+
+except Exception as e:
+    # CUDAが利用できない場合は警告を出してスキップ
+    import warnings
+    warnings.warn(
+        f"CUDA is not available for monotonic_align. "
+        f"Using CPU version (Numba JIT) only. Error: {e}",
+        RuntimeWarning
+    )
+    _CUDA_AVAILABLE = False
+
+    # ダミー関数を定義してエラーを防ぐ
+    def maximum_path_cuda_jit(*args, **kwargs):
+        raise RuntimeError(
+            "CUDA version of maximum_path is not available. "
+            "Please use the CPU version (maximum_path) instead."
+        )

@@ -1,9 +1,9 @@
+from typing import Any
 import math
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from traitlets import Any
 
 
 def init_weights(m, mean=0.0, std=0.01):

@@ -17,7 +17,7 @@ from utils import config, functions
 # Note: The README says 'dataset/nonpara30' but often these are symlinked or we need to find the real path.
 # Assuming standard structure relative to script: ../dataset/nonpara30
 # Based on previous listing, 'dataset/nonpara30' exists in the project root.
-TARGET_BASE = Path('../dataset/nonpara30') 
+TARGET_BASE = Path('../dataset/nonpara30')
 
 # Converted V2: ../results/generated/whisper_converted_v2
 PSEUDO_CONV_BASE = Path('../results/generated/whisper_converted_v2')

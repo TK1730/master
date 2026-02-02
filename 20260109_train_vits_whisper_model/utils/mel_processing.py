@@ -2,6 +2,7 @@ import warnings
 
 import torch
 import torchaudio.transforms as T
+from typing import Optional
 
 spectrogram_basis = {}
 mel_scale_basis = {}
@@ -41,19 +42,27 @@ def spectral_de_normalize_torch(magnitudes):
 
 
 def wav_to_spec(
-        y: torch.Tensor,
-        n_fft,
-        sample_rate,
-        hop_length,
-        win_length,
-        center=False
+    y: torch.Tensor,
+    n_fft: int,
+    sample_rate: int,
+    hop_length: int,
+    win_length: int,
+    center: bool = False
 ) -> torch.Tensor:
+    """音声波形から線形スペクトログラムを計算する"""
     assert torch.min(y) >= -1.0, f"min value is {torch.min(y)}"
     assert torch.max(y) <= 1.0, f"max value is {torch.max(y)}"
 
     global spectrogram_basis
     dtype_device = str(y.dtype) + "_" + str(y.device)
-    hparams = dtype_device + "_" + str(n_fft) + "_" + str(hop_length)
+    hparams = (
+        dtype_device + "_"
+        + str(n_fft) + "_"
+        + str(hop_length) + "_"
+        + str(win_length) + "_"
+        + str(center)
+    )
+
     if hparams not in spectrogram_basis:
         spectrogram_basis[hparams] = T.Spectrogram(
             n_fft=n_fft,
@@ -65,6 +74,7 @@ def wav_to_spec(
         ).to(device=y.device, dtype=y.dtype)
 
     spec = spectrogram_basis[hparams](y)
+    # 0埋めを避けるための微小値加算 (後段での対数変換等でのNaNを防止)
     spec = torch.sqrt(spec.pow(2) + 1e-6)
     return spec
 
@@ -92,7 +102,7 @@ def spec_to_mel(
             f_max=f_max,
             n_stft=n_fft // 2 + 1,
             norm="slaney",
-            mel_scale="slaney"
+            mel_scale="htk"
         ).to(device=spec.device, dtype=spec.dtype)
 
     mel = torch.matmul(mel_scale_basis[hparams].fb.T, spec)
@@ -102,16 +112,18 @@ def spec_to_mel(
 
 
 def wav_to_mel(
-        y: torch.Tensor,
-        n_fft, num_mels,
-        sampling_rate,
-        hop_size,
-        win_size,
-        fmin,
-        fmax,
-        center=False,
-        norm=True
+    y: torch.Tensor,
+    n_fft: int,
+    num_mels: int,
+    sampling_rate: int,
+    hop_size: int,
+    win_size: int,
+    fmin: float,
+    fmax: Optional[float],
+    center: bool = False,
+    norm: bool = True
 ) -> torch.Tensor:
+    """音声波形からメルスペクトログラムを計算する"""
     assert torch.min(y) >= -1.0, f"min value is {torch.min(y)}"
     assert torch.max(y) <= 1.0, f"max value is {torch.max(y)}"
 
@@ -121,9 +133,14 @@ def wav_to_mel(
         dtype_device + "_"
         + str(n_fft) + "_"
         + str(num_mels) + "_"
+        + str(sampling_rate) + "_"
         + str(hop_size) + "_"
-        + str(fmax)
+        + str(win_size) + "_"
+        + str(fmin) + "_"
+        + str(fmax) + "_"
+        + str(center)
     )
+
     if hparams not in mel_spectrogram_basis:
         mel_spectrogram_basis[hparams] = T.MelSpectrogram(
             sample_rate=sampling_rate,
@@ -142,6 +159,7 @@ def wav_to_mel(
 
     mel = mel_spectrogram_basis[hparams](y)
     if norm:
+        # 対数正規化 (Natural log)
         mel = spectral_normalize_torch(mel)
     return mel
 

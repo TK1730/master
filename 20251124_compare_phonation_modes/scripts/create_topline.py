@@ -51,7 +51,7 @@ if __name__ == "__main__":
     # 出力先
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Output path for resynthesized audio")
-    parser.add_argument("--sr", type=int, default=24000, help="Sampling rate")
+    parser.add_argument("--sr", type=int, default=22050, help="Sampling rate")
 
     args = parser.parse_args()
 

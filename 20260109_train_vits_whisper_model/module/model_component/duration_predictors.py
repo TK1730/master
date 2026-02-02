@@ -444,11 +444,11 @@ class DurationPredictor(nn.Module):
         ])
 
         # Duration予測のための射影層（1チャネル出力）
-        self.proj = nn.Conv1d(filter_channels, 1)
+        self.proj = nn.Conv1d(filter_channels, 1, 1)
 
         # 話者条件付け層（多話者モデルの場合）
         if gin_channels != 0:
-            self.cond = nn.Conv1d(gin_channels, in_channels)
+            self.cond = nn.Conv1d(gin_channels, in_channels, 1)
 
     def forward(
         self,

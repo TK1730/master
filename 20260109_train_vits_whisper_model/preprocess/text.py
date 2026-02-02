@@ -1,7 +1,7 @@
 import argparse
+from pathlib import Path
 import json
 from collections import defaultdict
-from pathlib import Path
 from random import sample
 from typing import Optional
 
@@ -237,7 +237,8 @@ def preprocess(
             train_list.extend(utts)
             continue
         # ランダムにval_per_lang個のインデックスを選択
-        val_indices = set(sample(range(len(utts)), val_per_lang))
+        n_val = min(len(utts), val_per_lang)
+        val_indices = set(sample(range(len(utts)), n_val))
         # 元の順序を保ちながらリストを分割
         for index, utt in enumerate(utts):
             if index in val_indices:
@@ -292,7 +293,7 @@ def preprocess(
 
 
 if __name__ == "__main__":
-    import transcription
+    from preprocess import transcription
     from utils.config import TextPrompter
 
     parser = argparse.ArgumentParser()
@@ -334,8 +335,8 @@ if __name__ == "__main__":
     yomi_error: str = args.yomi_error
     correct_path: bool = args.correct_path
 
-    output_dir = Path("preprocessed/jvs_ver1")
-    dataset_path = Path("preprocessed/jvs_ver1")
+    output_dir = Path("preprocessed/VITS_pretrain")
+    dataset_path = Path("preprocessed/VITS_pretrain")
 
     # jvsデータセットの各話者ディレクトリを走査
     preprocess(

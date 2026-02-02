@@ -104,15 +104,23 @@ python 20251205_create_whisper2voice/scripts/acoustic_analysis.py
 
 ### **定量評価 (Quantitative)**
 
+基準データセット: **nonpara30** (有声発話音声)
+
 | Metric | whisper_converted_v2 | whisper10 | 備考 |
 | :---- | :---- | :---- | :---- |
-| MSE (DTW) | [結果] | [結果] | DTWアライメント後の平均二乗誤差 |
-| MCD (DTW) | [結果] | [結果] | DTWアライメント後のメルケプストラル歪み |
-| MSE (No DTW) | [結果] | [結果] | 参考：DTWなしの平均二乗誤差 |
-| MCD (No DTW) | [結果] | [結果] | 参考：DTWなしのメルケプストラル歪み |
+| **MCD (dB)** | 8.15 ± 0.56 | 8.67 ± 0.63 | Mel Cepstral Distortion（低いほど良い） |
+| **Mel-MSE** | 2.65 ± 0.46 | 3.28 ± 0.70 | メルスペクトログラムMSE（低いほど良い） |
+| **F0-MSE (Hz²)** | 2472 ± 1629 | 2846 ± 2074 | 基本周波数MSE（有声区間のみ） |
+| **LogF0-RMSE** | 0.126 ± 0.028 | 0.136 ± 0.032 | ログスケール基本周波数RMSE（有声区間のみ） |
+| **SP-MSE** | 0.0003 ± 0.0002 | 0.0004 ± 0.0003 | スペクトル包絡MSE |
+| **AP-MSE** | 0.248 ± 0.042 | 0.269 ± 0.044 | 非周期性指標MSE |
 
 ### **考察 (Discussion)**
 
-* **結果:** [実験結果に基づいた考察を記載]
-* **課題:** [実験中に発見された課題を記載]
-* **Next Step:** [次のステップや改善案を記載]
+* **結果:** 
+  - **MCD**: whisper_converted_v2(8.15dB)はwhisper10(8.67dB)より低く、メルケプストラムの観点でwhisper_converted_v2の方がnonpara30に近い
+  - **Mel-MSE**: whisper_converted_v2(2.65)はwhisper10(3.28)より低く、メルスペクトログラムの観点でもwhisper_converted_v2が優れている
+  - **F0-MSE, SP-MSE, AP-MSE**: すべての指標でwhisper_converted_v2がwhisper10より良い性能を示す
+* **結論:** VITS生成の疑似ささやき声から変換した有声発話（whisper_converted_v2）は、実際のささやき声から変換した有声発話（whisper10）よりも、すべての指標においてターゲット音声に近い
+* **Next Step:** 主観評価の実施、リスニングテストによる自然性評価
+
