@@ -20,7 +20,7 @@ N_MELS = 80
 N_FFT = 1024
 HOP_LENGTH = 256
 F_MIN = 0
-F_MAX = 8000  # 8kHz upper limit for better visualization
+F_MAX = None  # 8kHz upper limit for better visualization
 
 
 def dynamic_range_compression(
@@ -200,7 +200,6 @@ def visualize_single_file(
         print(f"Error processing {audio_file.name}: {e}")
 
 
-
 def visualize_dataset_samples(
     dataset_paths: List[str],
     n_samples: int = 3,
@@ -261,7 +260,7 @@ def visualize_dataset_samples(
                 print(f"  Duration: {len(wav)/sr:.2f}s")
 
                 # Compute mel-spectrogram
-                mel_spec = compute_mel_spectrogram(wav, sr)
+                mel_spec = compute_mel_spectrogram(wav, sr, f_max=None)
                 print(f"  Mel-spec shape: {mel_spec.shape}")
 
                 # Create plot title
@@ -306,4 +305,3 @@ if __name__ == "__main__":
             output_dir="results/mel_spectrograms",
             sr=22050
         )
-
